@@ -30,12 +30,15 @@ export default function ReportScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  useEffect(() => {
-    fetchItem(id as string)
-      .then(setItem)
-      .catch(() => setItem(null))
-      .finally(() => setLoading(false));
-  }, [id]);
+useEffect(() => {
+  fetchItem(id as string)
+    .then(setItem)
+    .catch((error) => {
+      console.error('Failed to fetch item:', error);  // Log the error
+      setItem(null);
+    })
+    .finally(() => setLoading(false));
+}, [id]);
 
   const handleSubmit = async () => {
     if (!selected || !item) return;
