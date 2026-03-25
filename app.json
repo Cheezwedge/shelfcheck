@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "ShelfCheck",
+    "slug": "shelfcheck",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1D9E75"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shelfcheck.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1D9E75"
+      },
+      "package": "com.shelfcheck.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font"
+    ],
+    "scheme": "shelfcheck",
+    "experiments": {
+      "typedRoutes": true,
+      "baseUrl": "/shelfcheck"
+    }
+  }
+}
