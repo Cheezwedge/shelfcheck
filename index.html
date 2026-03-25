@@ -32,6 +32,19 @@
     </noscript>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
+  <div id="debug-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;padding:20px;font-family:monospace;font-size:13px;overflow:auto;z-index:9999;white-space:pre-wrap;word-break:break-all;"></div>
+  <script>
+    window.addEventListener('error', function(e) {
+      var el = document.getElementById('debug-overlay');
+      el.style.display = 'block';
+      el.textContent = 'JS ERROR:\n' + (e.message || '') + '\n\n' + (e.filename || '') + ':' + e.lineno + '\n\n' + (e.error && e.error.stack ? e.error.stack : '');
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var el = document.getElementById('debug-overlay');
+      el.style.display = 'block';
+      el.textContent = (el.textContent || '') + '\nUNHANDLED PROMISE:\n' + (e.reason ? (e.reason.stack || e.reason.message || String(e.reason)) : String(e));
+    });
+  </script>
   <script src="/shelfcheck/_expo/static/js/web/entry-373f0d107adb64476b805830d9025947.js" defer></script>
 </body>
 </html>
