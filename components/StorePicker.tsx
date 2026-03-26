@@ -19,6 +19,8 @@ import {
   findSupabaseStore,
   saveStore,
   searchStoresByName,
+  getFavorites,
+  toggleFavorite,
   CHAINS,
   ALL_CHAIN_KEYS,
   type ChainKey,
@@ -58,6 +60,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const [zip, setZip] = useState('');
   const [zipError, setZipError] = useState<string | null>(null);
   const [hoveredOsmId, setHoveredOsmId] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(() => getFavorites());
   const [storeSearch, setStoreSearch] = useState('');
   const [searchResults, setSearchResults] = useState<StoreSearchResult[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -70,6 +73,18 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const filteredStores = useMemo(
     () => allStores.filter((s) => activeChains.has(s.chainKey)),
     [allStores, activeChains]
+  );
+
+  // Sorted for the list: favorites first, then by distance.
+  // The map still uses filteredStores (stable ref) to avoid re-zooming.
+  const sortedStores = useMemo(
+    () => [...filteredStores].sort((a, b) => {
+      const aFav = favorites.has(a.name) ? 0 : 1;
+      const bFav = favorites.has(b.name) ? 0 : 1;
+      if (aFav !== bFav) return aFav - bFav;
+      return a.distanceMi - b.distanceMi;
+    }),
+    [filteredStores, favorites]
   );
 
   const allChainsActive = activeChains.size === ALL_CHAIN_KEYS.length;
@@ -201,10 +216,15 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   function handleMapHover(osmId: string | null) {
     setHoveredOsmId(osmId);
     if (osmId) {
-      const idx = filteredStores.findIndex((s) => s.osmId === osmId);
+      const idx = sortedStores.findIndex((s) => s.osmId === osmId);
       if (idx >= 0)
         listRef.current?.scrollToIndex({ index: idx, animated: true, viewOffset: 8 });
     }
+  }
+
+  function handleFavorite(storeName: string) {
+    toggleFavorite(storeName);
+    setFavorites(getFavorites());
   }
 
   function toggleChain(key: ChainKey) {
@@ -475,7 +495,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
             {/* Regular store list — hidden when search results are showing */}
             {searchResults !== null ? null : <FlatList
               ref={listRef}
-              data={filteredStores}
+              data={sortedStores}
               keyExtractor={(s) => s.osmId}
               contentContainerStyle={styles.list}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -501,33 +521,43 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
               }
               renderItem={({ item }) => {
                 const isHighlighted = item.osmId === hoveredOsmId;
+                const isFav = favorites.has(item.name);
                 return (
-                  <TouchableOpacity
-                    style={[styles.storeRow, isHighlighted && styles.storeRowHighlighted]}
-                    onPress={() => handleSelect(item)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.storeIcon, isHighlighted && styles.storeIconHighlighted]}>
+                  <View style={[styles.storeRow, isHighlighted && styles.storeRowHighlighted]}>
+                    <TouchableOpacity
+                      style={styles.storeRowMain}
+                      onPress={() => handleSelect(item)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.storeIcon, isHighlighted && styles.storeIconHighlighted]}>
+                        <Ionicons
+                          name="storefront-outline"
+                          size={20}
+                          color={isHighlighted ? '#fff' : PRIMARY}
+                        />
+                      </View>
+                      <View style={styles.storeInfo}>
+                        <Text style={styles.storeName}>{item.name}</Text>
+                        <Text style={styles.storeDist}>
+                          {item.distanceMi < 0.1
+                            ? 'Less than 0.1 mi away'
+                            : `${item.distanceMi.toFixed(1)} mi away`}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleFavorite(item.name)} hitSlop={8} style={styles.starBtn}>
                       <Ionicons
-                        name="storefront-outline"
-                        size={20}
-                        color={isHighlighted ? '#fff' : PRIMARY}
+                        name={isFav ? 'star' : 'star-outline'}
+                        size={17}
+                        color={isFav ? '#F59E0B' : '#D1D5DB'}
                       />
-                    </View>
-                    <View style={styles.storeInfo}>
-                      <Text style={styles.storeName}>{item.name}</Text>
-                      <Text style={styles.storeDist}>
-                        {item.distanceMi < 0.1
-                          ? 'Less than 0.1 mi away'
-                          : `${item.distanceMi.toFixed(1)} mi away`}
-                      </Text>
-                    </View>
+                    </TouchableOpacity>
                     <Ionicons
                       name="chevron-forward"
                       size={18}
                       color={isHighlighted ? PRIMARY : '#D1D5DB'}
                     />
-                  </TouchableOpacity>
+                  </View>
                 );
               }}
             />}
@@ -603,9 +633,11 @@ const styles = StyleSheet.create({
   separator:            { height: 1, backgroundColor: '#F3F4F6', marginLeft: 60 },
   storeRow:             { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 12 },
   storeRowHighlighted:  { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7' },
+  storeRowMain:         { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   storeIcon:            { width: 40, height: 40, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' },
   storeIconHighlighted: { backgroundColor: PRIMARY },
   storeInfo:            { flex: 1, gap: 2 },
   storeName:            { fontSize: 15, fontWeight: '600', color: '#111827' },
   storeDist:            { fontSize: 12, color: '#9CA3AF' },
+  starBtn:              { padding: 4 },
 });

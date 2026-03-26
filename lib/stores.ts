@@ -151,6 +151,24 @@ export function saveStore(store: SelectedStore): void {
   } catch {}
 }
 
+// ─── Store favorites ────────────────────────────────────────────────────────────
+const FAVORITES_KEY = 'shelfcheck_favorite_stores';
+
+export function getFavorites(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function toggleFavorite(storeName: string): void {
+  const favs = getFavorites();
+  favs.has(storeName) ? favs.delete(storeName) : favs.add(storeName);
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favs])); } catch {}
+}
+
 // ─── Free-text store name search (not limited to allowed chains) ───────────────
 export interface StoreSearchResult {
   osmId: string;

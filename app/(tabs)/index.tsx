@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
@@ -21,9 +21,26 @@ import { fetchItems, fetchStoreName, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
 import { getSavedStore, type SelectedStore } from '../../lib/stores';
+import { getList, type GroceryListItem } from '../../lib/groceryList';
 import StorePicker from '../../components/StorePicker';
 
 const PRIMARY = '#1D9E75';
+
+// Display item: merges Supabase LiveItem shape + grocery list metadata
+type HomeItem = {
+  id: string;           // Supabase item ID, empty string if no match
+  name: string;
+  category: string;
+  status: StockStatus | null;
+  lastReportedAt: string | null;
+  onList: boolean;      // true when item is on the user's active grocery list
+};
+
+type HomeSection = { key: string; title: string; data: HomeItem[] };
+
+function storeKey(store: SelectedStore | null): string {
+  return store?.supabaseId ?? store?.name ?? '__default__';
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -34,9 +51,11 @@ export default function HomeScreen() {
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [listItems, setListItems] = useState<GroceryListItem[]>([]);
 
   const activeStoreId = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
   const activeStoreName = selectedStore?.name ?? null;
+  const sk = storeKey(selectedStore);
 
   const load = useCallback(async () => {
     setError(null);
@@ -85,37 +104,104 @@ export default function HomeScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [load]);
 
-  const filtered = items.filter((item) =>
-    item.name.toLowerCase().includes(search.toLowerCase())
+  // Reload grocery list whenever the selected store changes
+  useEffect(() => {
+    setListItems(getList(sk));
+  }, [sk]);
+
+  // Active (unchecked) grocery list items
+  const listItemsActive = useMemo(
+    () => listItems.filter((i) => !i.checked),
+    [listItems]
   );
 
-  const renderItem = ({ item }: { item: LiveItem }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() => router.push(`/report/${item.id}`)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.itemLeft}>
-        <Text style={styles.itemName}>{item.name}</Text>
-        <View style={styles.itemMeta}>
-          <Text style={styles.itemCategory}>{item.category}</Text>
-          <Text style={styles.dot}>·</Text>
-          <Ionicons name="time-outline" size={12} color="#9CA3AF" />
-          <Text style={styles.itemTime}>{formatTimeAgo(item.lastReportedAt)}</Text>
-        </View>
-      </View>
-      <View style={styles.itemRight}>
-        <StatusBadge status={item.status} />
-        <Ionicons name="chevron-forward" size={16} color="#D1D5DB" style={styles.chevron} />
-      </View>
-    </TouchableOpacity>
+  // Names of items on the list (for filtering the "All Items" section)
+  const listNameSet = useMemo(
+    () => new Set(listItemsActive.map((i) => i.name.toLowerCase())),
+    [listItemsActive]
   );
+
+  // "My List" section: grocery list items merged with Supabase availability data
+  const myListSection = useMemo((): HomeItem[] => {
+    if (!listItemsActive.length) return [];
+    return listItemsActive
+      .filter((li) => !search || li.name.toLowerCase().includes(search.toLowerCase()))
+      .map((li) => {
+        const match = items.find((i) => i.name.toLowerCase() === li.name.toLowerCase());
+        return {
+          id: match?.id ?? '',
+          name: li.name,
+          category: li.category,
+          status: match?.status ?? null,
+          lastReportedAt: match?.lastReportedAt ?? null,
+          onList: true,
+        };
+      });
+  }, [listItemsActive, items, search]);
+
+  // "All Items" section: Supabase items NOT on the grocery list
+  const allItemsSection = useMemo((): HomeItem[] => {
+    return items
+      .filter((i) => !listNameSet.has(i.name.toLowerCase()))
+      .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+      .map((i) => ({ ...i, onList: false }));
+  }, [items, listNameSet, search]);
+
+  const sections = useMemo((): HomeSection[] => {
+    const s: HomeSection[] = [];
+    if (myListSection.length > 0)
+      s.push({ key: 'list', title: 'My List', data: myListSection });
+    if (allItemsSection.length > 0)
+      s.push({ key: 'all', title: listItemsActive.length > 0 ? 'All Items' : '', data: allItemsSection });
+    return s;
+  }, [myListSection, allItemsSection, listItemsActive]);
 
   const inStock    = items.filter((i) => i.status === 'in-stock').length;
   const outOfStock = items.filter((i) => i.status === 'out-of-stock').length;
   const uncertain  = items.filter((i) => i.status === 'uncertain').length;
 
-  const noItemsYet = !loading && !error && items.length === 0 && activeStoreName;
+  const noItemsYet = !loading && !error && items.length === 0 && listItemsActive.length === 0 && !!activeStoreName;
+  const searchEmpty = !loading && !error && !noItemsYet && search.length > 0 && sections.length === 0;
+
+  const renderItem = ({ item }: { item: HomeItem }) => (
+    <TouchableOpacity
+      style={[styles.itemCard, item.onList && styles.itemCardOnList]}
+      onPress={() => { if (item.id) router.push(`/report/${item.id}`); }}
+      activeOpacity={item.id ? 0.7 : 1}
+    >
+      <View style={styles.itemLeft}>
+        {item.onList && (
+          <View style={styles.onListRow}>
+            <Ionicons name="cart" size={11} color={PRIMARY} />
+            <Text style={styles.onListLabel}>On my list</Text>
+          </View>
+        )}
+        <Text style={styles.itemName}>{item.name}</Text>
+        <View style={styles.itemMeta}>
+          <Text style={styles.itemCategory}>{item.category}</Text>
+          {item.lastReportedAt && (
+            <>
+              <Text style={styles.dot}>·</Text>
+              <Ionicons name="time-outline" size={12} color="#9CA3AF" />
+              <Text style={styles.itemTime}>{formatTimeAgo(item.lastReportedAt)}</Text>
+            </>
+          )}
+        </View>
+      </View>
+      <View style={styles.itemRight}>
+        {item.status ? (
+          <StatusBadge status={item.status} />
+        ) : item.onList ? (
+          <View style={styles.noDataBadge}>
+            <Text style={styles.noDataText}>No data</Text>
+          </View>
+        ) : null}
+        {item.id ? (
+          <Ionicons name="chevron-forward" size={16} color="#D1D5DB" style={styles.chevron} />
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -158,7 +244,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Stats row */}
-      {!loading && !error && (
+      {!loading && !error && items.length > 0 && (
         <View style={styles.statsRow}>
           <StatChip color="#1D9E75" label="In Stock"  count={inStock} />
           <StatChip color="#E53935" label="Out"        count={outOfStock} />
@@ -192,19 +278,26 @@ export default function HomeScreen() {
             <Text style={styles.changeStoreBtnText}>Choose a different store</Text>
           </View>
         </TouchableOpacity>
+      ) : searchEmpty ? (
+        <View style={styles.empty}>
+          <Ionicons name="search-outline" size={40} color="#D1D5DB" />
+          <Text style={styles.emptyText}>No items match "{search}"</Text>
+        </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id || item.name}
           renderItem={renderItem}
+          renderSectionHeader={({ section }) =>
+            section.title ? (
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+              </View>
+            ) : null
+          }
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="search-outline" size={40} color="#D1D5DB" />
-              <Text style={styles.emptyText}>No items match "{search}"</Text>
-            </View>
-          }
+          stickySectionHeadersEnabled={false}
         />
       )}
     </SafeAreaView>
@@ -347,6 +440,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 20,
   },
+  sectionHeader: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -354,6 +459,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     justifyContent: 'space-between',
+  },
+  itemCardOnList: {
+    borderLeftWidth: 3,
+    borderLeftColor: PRIMARY,
+    paddingLeft: 11,
+  },
+  onListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 2,
+  },
+  onListLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: PRIMARY,
   },
   itemLeft: {
     flex: 1,
@@ -405,6 +526,19 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  noDataBadge: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  noDataText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
   chevron: {
     marginLeft: 2,
