@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -59,8 +59,12 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const zipRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<NearbyStore>>(null);
 
-  // Stores filtered by active chain selections (no re-fetch needed)
-  const filteredStores = allStores.filter((s) => activeChains.has(s.chainKey));
+  // Stable reference — only changes when allStores or activeChains changes,
+  // NOT on every hover, so the map never gets an unnecessary rebuild.
+  const filteredStores = useMemo(
+    () => allStores.filter((s) => activeChains.has(s.chainKey)),
+    [allStores, activeChains]
+  );
 
   const allChainsActive = activeChains.size === ALL_CHAIN_KEYS.length;
   const inactiveCount = ALL_CHAIN_KEYS.length - activeChains.size;
@@ -299,7 +303,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
                 <TextInput
                   ref={zipRef}
                   style={[styles.zipInput, zipError ? styles.zipInputError : null]}
-                  placeholder="e.g. 92688"
+                  placeholder="ZIP code"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="number-pad"
                   maxLength={5}
