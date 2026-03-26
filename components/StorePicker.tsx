@@ -19,6 +19,7 @@ import {
   saveStore,
   type NearbyStore,
 } from '../lib/stores';
+import StoreMap from './StoreMap';
 
 const PRIMARY = '#1D9E75';
 
@@ -40,18 +41,22 @@ async function geocodeZip(zip: string): Promise<{ lat: number; lon: number }> {
 
 export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const [stores, setStores] = useState<NearbyStore[]>([]);
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showZipInput, setShowZipInput] = useState(false);
   const [zip, setZip] = useState('');
   const [zipError, setZipError] = useState<string | null>(null);
+  const [hoveredOsmId, setHoveredOsmId] = useState<string | null>(null);
   const zipRef = useRef<TextInput>(null);
+  const listRef = useRef<FlatList<NearbyStore>>(null);
 
   useEffect(() => {
     if (visible) {
       setShowZipInput(false);
       setZip('');
       setZipError(null);
+      setCoords(null);
       loadFromGPS();
     }
   }, [visible]);
@@ -61,8 +66,9 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
     setError(null);
     setStores([]);
     try {
-      const { lat, lon } = await getGPSCoords();
-      const nearby = await fetchNearbyStores(lat, lon);
+      const loc = await getGPSCoords();
+      setCoords(loc);
+      const nearby = await fetchNearbyStores(loc.lat, loc.lon);
       setStores(nearby);
     } catch (e: any) {
       const msg = String(e?.message ?? e);
@@ -112,8 +118,9 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
     setStores([]);
     setError(null);
     try {
-      const { lat, lon } = await geocodeZip(trimmed);
-      const nearby = await fetchNearbyStores(lat, lon);
+      const loc = await geocodeZip(trimmed);
+      setCoords(loc);
+      const nearby = await fetchNearbyStores(loc.lat, loc.lon);
       setStores(nearby);
     } catch (e: any) {
       setError(e.message || 'Could not find stores for that zip code.');
@@ -129,6 +136,17 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
     saveStore(selected);
     onSelect(store.name, supabaseId);
     onClose();
+  }
+
+  // When a map marker is hovered/selected, scroll the list to that item
+  function handleMapHover(osmId: string | null) {
+    setHoveredOsmId(osmId);
+    if (osmId) {
+      const idx = stores.findIndex((s) => s.osmId === osmId);
+      if (idx >= 0) {
+        listRef.current?.scrollToIndex({ index: idx, animated: true, viewOffset: 8 });
+      }
+    }
   }
 
   return (
@@ -225,41 +243,60 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
             </TouchableOpacity>
           </View>
         ) : (
-          <FlatList
-            data={stores}
-            keyExtractor={(s) => s.osmId}
-            contentContainerStyle={styles.list}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            ListHeaderComponent={
-              <TouchableOpacity
-                style={styles.changeZipRow}
-                onPress={() => { setStores([]); setShowZipInput(true); }}
-              >
-                <Ionicons name="keypad-outline" size={14} color={PRIMARY} />
-                <Text style={styles.changeZipText}>Search a different zip code</Text>
-              </TouchableOpacity>
-            }
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.storeRow}
-                onPress={() => handleSelect(item)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.storeIcon}>
-                  <Ionicons name="storefront-outline" size={20} color={PRIMARY} />
-                </View>
-                <View style={styles.storeInfo}>
-                  <Text style={styles.storeName}>{item.name}</Text>
-                  <Text style={styles.storeDist}>
-                    {item.distanceMi < 0.1
-                      ? 'Less than 0.1 mi away'
-                      : `${item.distanceMi.toFixed(1)} mi away`}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
-              </TouchableOpacity>
-            )}
-          />
+          <View style={styles.resultsContainer}>
+            {/* Map (web only — native StoreMap returns null) */}
+            {coords ? (
+              <StoreMap
+                stores={stores}
+                center={coords}
+                selectedOsmId={hoveredOsmId}
+                onHover={handleMapHover}
+                onSelect={handleSelect}
+              />
+            ) : null}
+
+            {/* Store list */}
+            <FlatList
+              ref={listRef}
+              data={stores}
+              keyExtractor={(s) => s.osmId}
+              contentContainerStyle={styles.list}
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              onScrollToIndexFailed={() => {}}
+              ListHeaderComponent={
+                <TouchableOpacity
+                  style={styles.changeZipRow}
+                  onPress={() => { setStores([]); setCoords(null); setShowZipInput(true); }}
+                >
+                  <Ionicons name="keypad-outline" size={14} color={PRIMARY} />
+                  <Text style={styles.changeZipText}>Search a different zip code</Text>
+                </TouchableOpacity>
+              }
+              renderItem={({ item }) => {
+                const isHighlighted = item.osmId === hoveredOsmId;
+                return (
+                  <TouchableOpacity
+                    style={[styles.storeRow, isHighlighted && styles.storeRowHighlighted]}
+                    onPress={() => handleSelect(item)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.storeIcon, isHighlighted && styles.storeIconHighlighted]}>
+                      <Ionicons name="storefront-outline" size={20} color={isHighlighted ? '#fff' : PRIMARY} />
+                    </View>
+                    <View style={styles.storeInfo}>
+                      <Text style={styles.storeName}>{item.name}</Text>
+                      <Text style={styles.storeDist}>
+                        {item.distanceMi < 0.1
+                          ? 'Less than 0.1 mi away'
+                          : `${item.distanceMi.toFixed(1)} mi away`}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={isHighlighted ? PRIMARY : '#D1D5DB'} />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
         )}
       </KeyboardAvoidingView>
     </Modal>
@@ -267,35 +304,38 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#F9FAFB' },
-  header:           { backgroundColor: '#fff', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  handle:           { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 14 },
-  headerRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title:            { fontSize: 18, fontWeight: '700', color: '#111827' },
-  subtitle:         { fontSize: 13, color: '#9CA3AF', marginTop: 4 },
-  closeBtn:         { padding: 4 },
-  centered:         { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
-  hint:             { fontSize: 14, color: '#9CA3AF', textAlign: 'center' },
-  errorText:        { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
-  permissionTitle:  { fontSize: 16, fontWeight: '700', color: '#111827' },
-  permissionSub:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
-  zipRow:           { flexDirection: 'row', gap: 8, width: '100%', maxWidth: 280 },
-  zipInput:         { flex: 1, height: 48, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 16, fontSize: 18, fontWeight: '600', color: '#111827', textAlign: 'center', letterSpacing: 4 },
-  zipInputError:    { borderColor: '#EF4444' },
-  zipBtn:           { width: 48, height: 48, backgroundColor: PRIMARY, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  zipBtnDisabled:   { backgroundColor: '#D1D5DB' },
-  zipErrorText:     { fontSize: 12, color: '#EF4444', textAlign: 'center' },
-  tryGpsBtn:        { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
-  tryGpsBtnText:    { fontSize: 13, color: PRIMARY, fontWeight: '600' },
-  retryBtn:         { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10, marginTop: 4 },
-  retryBtnText:     { color: '#fff', fontWeight: '700', fontSize: 14 },
-  list:             { padding: 16 },
-  changeZipRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingHorizontal: 2 },
-  changeZipText:    { fontSize: 13, color: PRIMARY, fontWeight: '600' },
-  separator:        { height: 1, backgroundColor: '#F3F4F6', marginLeft: 60 },
-  storeRow:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 12 },
-  storeIcon:        { width: 40, height: 40, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' },
-  storeInfo:        { flex: 1, gap: 2 },
-  storeName:        { fontSize: 15, fontWeight: '600', color: '#111827' },
-  storeDist:        { fontSize: 12, color: '#9CA3AF' },
+  container:              { flex: 1, backgroundColor: '#F9FAFB' },
+  header:                 { backgroundColor: '#fff', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  handle:                 { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 14 },
+  headerRow:              { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title:                  { fontSize: 18, fontWeight: '700', color: '#111827' },
+  subtitle:               { fontSize: 13, color: '#9CA3AF', marginTop: 4 },
+  closeBtn:               { padding: 4 },
+  centered:               { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
+  hint:                   { fontSize: 14, color: '#9CA3AF', textAlign: 'center' },
+  errorText:              { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  permissionTitle:        { fontSize: 16, fontWeight: '700', color: '#111827' },
+  permissionSub:          { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  zipRow:                 { flexDirection: 'row', gap: 8, width: '100%', maxWidth: 280 },
+  zipInput:               { flex: 1, height: 48, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 16, fontSize: 18, fontWeight: '600', color: '#111827', textAlign: 'center', letterSpacing: 4 },
+  zipInputError:          { borderColor: '#EF4444' },
+  zipBtn:                 { width: 48, height: 48, backgroundColor: PRIMARY, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  zipBtnDisabled:         { backgroundColor: '#D1D5DB' },
+  zipErrorText:           { fontSize: 12, color: '#EF4444', textAlign: 'center' },
+  tryGpsBtn:              { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  tryGpsBtnText:          { fontSize: 13, color: PRIMARY, fontWeight: '600' },
+  retryBtn:               { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10, marginTop: 4 },
+  retryBtnText:           { color: '#fff', fontWeight: '700', fontSize: 14 },
+  resultsContainer:       { flex: 1 },
+  list:                   { padding: 16 },
+  changeZipRow:           { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingHorizontal: 2 },
+  changeZipText:          { fontSize: 13, color: PRIMARY, fontWeight: '600' },
+  separator:              { height: 1, backgroundColor: '#F3F4F6', marginLeft: 60 },
+  storeRow:               { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 12 },
+  storeRowHighlighted:    { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7' },
+  storeIcon:              { width: 40, height: 40, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' },
+  storeIconHighlighted:   { backgroundColor: PRIMARY },
+  storeInfo:              { flex: 1, gap: 2 },
+  storeName:              { fontSize: 15, fontWeight: '600', color: '#111827' },
+  storeDist:              { fontSize: 12, color: '#9CA3AF' },
 });
