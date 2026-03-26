@@ -1,10 +1,11 @@
 export interface GroceryListItem {
   id: string;
-  itemId: string | null;   // Supabase item ID, null for sample/custom items
+  itemId: string | null;
   name: string;
   category: string;
+  quantity: number;        // always ≥ 1
   checked: boolean;
-  addedAt: string;         // ISO timestamp
+  addedAt: string;
   checkedAt: string | null;
 }
 
@@ -30,36 +31,61 @@ function makeId(): string {
 }
 
 export function getList(storeKey: string): GroceryListItem[] {
-  return loadAll()[storeKey] ?? [];
+  // Migrate old items that don't have a quantity field
+  return (loadAll()[storeKey] ?? []).map((i) => ({
+    ...i,
+    quantity: i.quantity ?? 1,
+  }));
 }
 
-/** Adds an item; silently skips if an unchecked item with the same name already exists. */
+/**
+ * Adds an item to the list.
+ * If an unchecked item with the same name already exists, increments its quantity instead.
+ */
 export function addItem(
   storeKey: string,
   item: Pick<GroceryListItem, 'name' | 'category' | 'itemId'>
 ): void {
   const all = loadAll();
   const list = all[storeKey] ?? [];
-  const dup = list.find(
+  const dupIdx = list.findIndex(
     (i) => !i.checked && i.name.toLowerCase() === item.name.toLowerCase()
   );
-  if (dup) return;
-  all[storeKey] = [
-    {
-      id: makeId(),
-      itemId: item.itemId,
-      name: item.name,
-      category: item.category,
-      checked: false,
-      addedAt: new Date().toISOString(),
-      checkedAt: null,
-    },
-    ...list,
-  ];
+  if (dupIdx !== -1) {
+    // Increment quantity of existing item
+    all[storeKey] = list.map((i, idx) =>
+      idx === dupIdx ? { ...i, quantity: (i.quantity ?? 1) + 1 } : i
+    );
+  } else {
+    all[storeKey] = [
+      {
+        id: makeId(),
+        itemId: item.itemId,
+        name: item.name,
+        category: item.category,
+        quantity: 1,
+        checked: false,
+        addedAt: new Date().toISOString(),
+        checkedAt: null,
+      },
+      ...list,
+    ];
+  }
   saveAll(all);
 }
 
-/** Toggles checked ↔ unchecked, recording the timestamp when checked. */
+/** Changes quantity by delta; quantity is clamped to minimum 1. */
+export function changeQuantity(storeKey: string, id: string, delta: number): void {
+  const all = loadAll();
+  all[storeKey] = (all[storeKey] ?? []).map((item) =>
+    item.id === id
+      ? { ...item, quantity: Math.max(1, (item.quantity ?? 1) + delta) }
+      : item
+  );
+  saveAll(all);
+}
+
+/** Toggles checked ↔ unchecked. */
 export function toggleItem(storeKey: string, id: string): void {
   const all = loadAll();
   all[storeKey] = (all[storeKey] ?? []).map((item) =>
