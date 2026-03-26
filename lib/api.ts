@@ -23,11 +23,11 @@ function toLocalItem(row: ItemRow): LiveItem {
  * Fetch all items for the default store with their current status.
  * Reads from the `items_with_status` Postgres view.
  */
-export async function fetchItems(): Promise<LiveItem[]> {
+export async function fetchItems(storeId = DEFAULT_STORE_ID): Promise<LiveItem[]> {
   const { data, error } = await supabase
     .from('items_with_status')
     .select('*')
-    .eq('store_id', DEFAULT_STORE_ID)
+    .eq('store_id', storeId)
     .order('name');
 
   if (error) throw error;
@@ -55,11 +55,11 @@ export async function fetchItem(id: string): Promise<LiveItem | null> {
 /**
  * Fetch the store name for the default store.
  */
-export async function fetchStoreName(): Promise<string> {
+export async function fetchStoreName(storeId = DEFAULT_STORE_ID): Promise<string> {
   const { data, error } = await supabase
     .from('stores')
     .select('name')
-    .eq('id', DEFAULT_STORE_ID)
+    .eq('id', storeId)
     .single();
 
   if (error) throw error;

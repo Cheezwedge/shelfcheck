@@ -17,9 +17,11 @@ import {
   STATUS_LABELS,
   formatTimeAgo,
 } from '../../data';
-import { fetchItems, fetchStoreName } from '../../lib/api';
+import { fetchItems, fetchStoreName, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
+import { getSavedStore, type SelectedStore } from '../../lib/stores';
+import StorePicker from '../../components/StorePicker';
 
 const PRIMARY = '#1D9E75';
 
@@ -28,13 +30,29 @@ export default function HomeScreen() {
   const [items, setItems] = useState<LiveItem[]>([]);
   const [storeName, setStoreName] = useState('');
   const [search, setSearch] = useState('');
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const activeStoreId = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
+  const activeStoreName = selectedStore?.name ?? null;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [itemData, name] = await Promise.all([fetchItems(), fetchStoreName()]);
+      const storeId = activeStoreId;
+      if (activeStoreName && !selectedStore?.supabaseId) {
+        // Store selected from map but not yet in our DB
+        setItems([]);
+        setStoreName(activeStoreName);
+        setLoading(false);
+        return;
+      }
+      const [itemData, name] = await Promise.all([
+        fetchItems(storeId),
+        fetchStoreName(storeId),
+      ]);
       setItems(itemData);
       setStoreName(name);
     } catch (e) {
@@ -42,9 +60,16 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
+  }, [activeStoreId, activeStoreName, selectedStore]);
+
+  // Load saved store on mount
+  useEffect(() => {
+    const saved = getSavedStore();
+    if (saved) setSelectedStore(saved);
   }, []);
 
   useEffect(() => {
+    setLoading(true);
     load();
 
     // Realtime: re-fetch whenever any report is inserted so badges update live
@@ -90,21 +115,34 @@ export default function HomeScreen() {
   const outOfStock = items.filter((i) => i.status === 'out-of-stock').length;
   const uncertain  = items.filter((i) => i.status === 'uncertain').length;
 
+  const noItemsYet = !loading && !error && items.length === 0 && activeStoreName;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <TouchableOpacity style={styles.header} onPress={() => setPickerVisible(true)} activeOpacity={0.75}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerLabel}>Checking inventory at</Text>
-          <Text style={styles.storeName} numberOfLines={1}>
-            {storeName || '…'}
-          </Text>
+          <View style={styles.storeNameRow}>
+            <Text style={styles.storeName} numberOfLines={1}>
+              {storeName || '…'}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color="#9CA3AF" style={{ marginTop: 2 }} />
+          </View>
         </View>
         <View style={styles.headerBadge}>
           <View style={[styles.liveDot, loading && styles.liveDotLoading]} />
           <Text style={styles.headerBadgeText}>{loading ? 'Syncing' : 'Live'}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
+
+      <StorePicker
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelect={(name, supabaseId) => {
+          setSelectedStore({ name, supabaseId });
+        }}
+      />
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -140,6 +178,18 @@ export default function HomeScreen() {
           <Text style={styles.errorText}>{error}</Text>
           <View style={styles.retryBtn}>
             <Text style={styles.retryBtnText}>Retry</Text>
+          </View>
+        </TouchableOpacity>
+      ) : noItemsYet ? (
+        <TouchableOpacity style={styles.centered} onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
+          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyStoreTitle}>No items tracked yet</Text>
+          <Text style={styles.emptyStoreSub}>
+            Be the first to report stock at {activeStoreName}.
+          </Text>
+          <View style={styles.changeStoreBtn}>
+            <Ionicons name="location-outline" size={15} color={PRIMARY} />
+            <Text style={styles.changeStoreBtnText}>Choose a different store</Text>
           </View>
         </TouchableOpacity>
       ) : (
@@ -207,6 +257,11 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontWeight: '500',
     marginBottom: 2,
+  },
+  storeNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   storeName: {
     fontSize: 17,
@@ -394,5 +449,34 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#9CA3AF',
+  },
+  emptyStoreTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  emptyStoreSub: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    lineHeight: 20,
+  },
+  changeStoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  changeStoreBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PRIMARY,
   },
 });
