@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 export interface NearbyStore {
   osmId: string;
   name: string;
+  chainKey: ChainKey;
   lat: number;
   lon: number;
   distanceMi: number;
@@ -13,6 +14,44 @@ export interface SelectedStore {
   supabaseId: string | null;
 }
 
+// ─── Allowed chain definitions ────────────────────────────────────────────────
+export const CHAINS = [
+  { key: 'ralphs',     label: "Ralphs",                  keywords: ["ralphs", "ralph's"] },
+  { key: 'vons',       label: "Vons",                    keywords: ["vons"] },
+  { key: 'albertsons', label: "Albertsons",              keywords: ["albertsons"] },
+  { key: 'stater',     label: "Stater Bros.",            keywords: ["stater bros"] },
+  { key: 'traderjoes', label: "Trader Joe's",            keywords: ["trader joe"] },
+  { key: 'wholefoods', label: "Whole Foods",             keywords: ["whole foods"] },
+  { key: 'sprouts',    label: "Sprouts",                 keywords: ["sprouts"] },
+  { key: 'costco',     label: "Costco",                  keywords: ["costco"] },
+  { key: 'food4less',  label: "Food 4 Less",             keywords: ["food 4 less", "food4less"] },
+  { key: 'smartfinal', label: "Smart & Final",           keywords: ["smart & final", "smart and final"] },
+  { key: 'pavilions',  label: "Pavilions",               keywords: ["pavilions"] },
+  { key: 'winco',      label: "WinCo Foods",             keywords: ["winco"] },
+  { key: '99ranch',    label: "99 Ranch Market",         keywords: ["99 ranch"] },
+  { key: 'northgate',  label: "Northgate",               keywords: ["northgate"] },
+  { key: 'walmart',    label: "Walmart",                 keywords: ["walmart"] },
+  { key: 'target',     label: "Target",                  keywords: ["target"] },
+  { key: 'aldi',       label: "Aldi",                    keywords: ["aldi"] },
+  { key: 'outlet',     label: "Grocery Outlet",          keywords: ["grocery outlet"] },
+  { key: 'bristol',    label: "Bristol Farms",           keywords: ["bristol farms"] },
+  { key: 'gelsons',    label: "Gelson's",                keywords: ["gelson"] },
+] as const;
+
+export type ChainKey = typeof CHAINS[number]['key'];
+export const ALL_CHAIN_KEYS = CHAINS.map((c) => c.key) as ChainKey[];
+
+export function matchChain(name: string): ChainKey | null {
+  const lower = name.toLowerCase();
+  for (const chain of CHAINS) {
+    if ((chain.keywords as readonly string[]).some((kw) => lower.includes(kw))) {
+      return chain.key as ChainKey;
+    }
+  }
+  return null;
+}
+
+// ─── Haversine distance ────────────────────────────────────────────────────────
 const STORAGE_KEY = 'shelfcheck_selected_store';
 
 function toMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -27,18 +66,21 @@ function toMiles(lat1: number, lon1: number, lat2: number, lon2: number): number
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ─── Overpass fetch ────────────────────────────────────────────────────────────
 export async function fetchNearbyStores(
   lat: number,
   lon: number,
   radiusMi = 5
 ): Promise<NearbyStore[]> {
   const radiusM = Math.round(radiusMi * 1609.34);
+  // Include both node and way elements; "out center" returns centroid for ways
   const query =
-    `[out:json][timeout:15];` +
+    `[out:json][timeout:20];` +
     `(node["shop"="supermarket"](around:${radiusM},${lat},${lon});` +
+    `way["shop"="supermarket"](around:${radiusM},${lat},${lon});` +
     `node["shop"="grocery"](around:${radiusM},${lat},${lon});` +
-    `node["shop"="convenience"](around:${radiusM},${lat},${lon}););` +
-    `out body 40;`;
+    `way["shop"="grocery"](around:${radiusM},${lat},${lon}););` +
+    `out center 200;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -50,21 +92,40 @@ export async function fetchNearbyStores(
 
   const data = await res.json();
 
-  return (data.elements as any[])
-    .filter((el) => el.tags?.name)
-    .map((el) => ({
+  const results: NearbyStore[] = [];
+  for (const el of data.elements as any[]) {
+    const name: string | undefined = el.tags?.name;
+    if (!name) continue;
+    const chainKey = matchChain(name);
+    if (!chainKey) continue; // skip stores not in the allowed list
+    // nodes have lat/lon directly; ways have el.center.lat / el.center.lon
+    const elLat: number = el.lat ?? el.center?.lat;
+    const elLon: number = el.lon ?? el.center?.lon;
+    if (elLat == null || elLon == null) continue;
+    results.push({
       osmId: String(el.id),
-      name: el.tags.name as string,
-      lat: el.lat as number,
-      lon: el.lon as number,
-      distanceMi: toMiles(lat, lon, el.lat, el.lon),
-    }))
-    .sort((a, b) => a.distanceMi - b.distanceMi);
+      name,
+      chainKey,
+      lat: elLat,
+      lon: elLon,
+      distanceMi: toMiles(lat, lon, elLat, elLon),
+    });
+  }
+
+  // De-duplicate: keep closest location per chain+name combo
+  const seen = new Map<string, NearbyStore>();
+  for (const s of results) {
+    const key = `${s.chainKey}:${s.name.toLowerCase()}`;
+    const existing = seen.get(key);
+    if (!existing || s.distanceMi < existing.distanceMi) seen.set(key, s);
+  }
+
+  return Array.from(seen.values()).sort((a, b) => a.distanceMi - b.distanceMi);
 }
 
-/** Looks up a store in Supabase by partial name match. */
+// ─── Supabase helpers ──────────────────────────────────────────────────────────
 export async function findSupabaseStore(name: string): Promise<string | null> {
-  const keyword = name.split(/\s+/)[0]; // e.g. "Vons" from "Vons #1234"
+  const keyword = name.split(/\s+/)[0];
   const { data } = await supabase
     .from('stores')
     .select('id')
