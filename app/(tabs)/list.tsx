@@ -4,15 +4,19 @@ import {
   Text,
   TextInput,
   FlatList,
+  SectionList,
   TouchableOpacity,
+  Modal,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchItems, DEFAULT_STORE_ID } from '../../lib/api';
-import { getSavedStore, type SelectedStore } from '../../lib/stores';
+import { getSavedStore, matchChain, type SelectedStore } from '../../lib/stores';
 import { getSampleItems } from '../../lib/sampleItems';
 import {
   getList,
@@ -30,38 +34,177 @@ import { STATUS_COLORS, STATUS_LABELS } from '../../data';
 
 const PRIMARY = '#1D9E75';
 
-// storeKey is supabaseId if available, else store name
 function storeKey(store: SelectedStore | null): string {
   return store?.supabaseId ?? store?.name ?? '__default__';
 }
 
+type Suggestion = { name: string; category: string; itemId: string | null };
+
+// ─── Add-Items bottom sheet ────────────────────────────────────────────────────
+function AddSheet({
+  visible,
+  suggestions,
+  statusByName,
+  loading,
+  onAdd,
+  onClose,
+}: {
+  visible: boolean;
+  suggestions: Suggestion[];
+  statusByName: Map<string, StockStatus>;
+  loading: boolean;
+  onAdd: (name: string, category: string, itemId: string | null) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      // Small delay so the modal animation finishes before focusing
+      setTimeout(() => inputRef.current?.focus(), 300);
+    }
+  }, [visible]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return suggestions;
+    return suggestions.filter((s) => s.name.toLowerCase().includes(q));
+  }, [query, suggestions]);
+
+  const showCustomAdd =
+    query.trim().length > 0 &&
+    !suggestions.some((s) => s.name.toLowerCase() === query.trim().toLowerCase());
+
+  function handleAdd(s: Suggestion) {
+    onAdd(s.name, s.category, s.itemId);
+    setQuery('');
+  }
+
+  function handleCustomAdd() {
+    const name = query.trim();
+    if (!name) return;
+    onAdd(name, 'General', null);
+    setQuery('');
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView style={sheet.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* Handle + header */}
+        <View style={sheet.header}>
+          <View style={sheet.handle} />
+          <View style={sheet.titleRow}>
+            <Text style={sheet.title}>Add Items</Text>
+            <TouchableOpacity onPress={onClose} style={sheet.doneBtn}>
+              <Text style={sheet.doneBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Search */}
+          <View style={sheet.searchRow}>
+            <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+            <TextInput
+              ref={inputRef}
+              style={sheet.searchInput}
+              placeholder="Search or type a custom item…"
+              placeholderTextColor="#9CA3AF"
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={handleCustomAdd}
+              returnKeyType="done"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={sheet.centered}>
+            <ActivityIndicator color={PRIMARY} />
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(s) => s.name}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={sheet.list}
+            ItemSeparatorComponent={() => <View style={sheet.sep} />}
+            ListHeaderComponent={
+              showCustomAdd ? (
+                <TouchableOpacity style={sheet.customRow} onPress={handleCustomAdd}>
+                  <View style={sheet.customIcon}>
+                    <Ionicons name="add" size={18} color={PRIMARY} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={sheet.customLabel}>Add "{query.trim()}"</Text>
+                    <Text style={sheet.customSub}>Custom item</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null
+            }
+            ListEmptyComponent={
+              !showCustomAdd ? (
+                <View style={sheet.centered}>
+                  <Text style={sheet.emptyText}>No matching items found.</Text>
+                </View>
+              ) : null
+            }
+            renderItem={({ item: s }) => {
+              const status = s.itemId ? statusByName.get(s.name.toLowerCase()) : undefined;
+              return (
+                <TouchableOpacity
+                  style={sheet.row}
+                  onPress={() => handleAdd(s)}
+                  activeOpacity={0.7}
+                >
+                  <View style={sheet.rowLeft}>
+                    <Text style={sheet.rowName}>{s.name}</Text>
+                    <Text style={sheet.rowCategory}>{s.category}</Text>
+                  </View>
+                  <View style={sheet.rowRight}>
+                    {status ? <StatusDot status={status} /> : null}
+                    <View style={sheet.addBtn}>
+                      <Ionicons name="add" size={16} color={PRIMARY} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Main List Screen ─────────────────────────────────────────────────────────
 export default function ListScreen() {
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
   const [storeItemsLoading, setStoreItemsLoading] = useState(false);
-  const [addQuery, setAddQuery] = useState('');
   const [historyOpen, setHistoryOpen] = useState(true);
-  const addRef = useRef<TextInput>(null);
 
   const key = storeKey(selectedStore);
 
-  // Load saved store on mount
   useEffect(() => {
     const saved = getSavedStore();
     if (saved) setSelectedStore(saved);
   }, []);
 
-  // Reload list whenever store changes
   useEffect(() => {
     setListItems(getList(key));
   }, [key]);
 
-  // Fetch store's Supabase items for stock status + catalog
   useEffect(() => {
     const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
-    if (!sid) return;
     setStoreItemsLoading(true);
     fetchItems(sid)
       .then(setStoreItems)
@@ -71,83 +214,39 @@ export default function ListScreen() {
 
   const refresh = useCallback(() => setListItems(getList(key)), [key]);
 
-  // Build stock-status lookup by name (lowercase)
   const statusByName = useMemo(() => {
     const m = new Map<string, StockStatus>();
     storeItems.forEach((i) => m.set(i.name.toLowerCase(), i.status));
     return m;
   }, [storeItems]);
 
-  // Suggestions for the add-item search
-  const allSuggestions = useMemo(() => {
-    const chainKey = selectedStore?.supabaseId
-      ? null // if has supabase ID, we show storeItems instead
-      : null; // will be looked up below
-    const samples = getSampleItems(null);
-    // Merge: Supabase items first (real stock data), then sample items
+  // Build suggestions: Supabase catalog + chain sample items (deduplicated)
+  const suggestions = useMemo<Suggestion[]>(() => {
+    const chainKey = matchChain(selectedStore?.name ?? '');
+    const samples = getSampleItems(chainKey).map((s) => ({ ...s, itemId: null as string | null }));
     const supabaseNames = new Set(storeItems.map((i) => i.name.toLowerCase()));
-    const merged = [
+    return [
       ...storeItems.map((i) => ({ name: i.name, category: i.category, itemId: i.id })),
-      ...samples
-        .filter((s) => !supabaseNames.has(s.name.toLowerCase()))
-        .map((s) => ({ name: s.name, category: s.category, itemId: null as string | null })),
+      ...samples.filter((s) => !supabaseNames.has(s.name.toLowerCase())),
     ];
-    return merged;
   }, [storeItems, selectedStore]);
 
-  // Get sample items for the current chain (used when no supabase items)
-  const chainSuggestions = useMemo(() => {
-    // Determine chain from store name
-    if (storeItems.length > 0) return allSuggestions;
-    if (!selectedStore) return getSampleItems(null).map((s) => ({ ...s, itemId: null as string | null }));
-    // Try to get chain from CHAINS list by matching store name
-    return getSampleItems(null).map((s) => ({ ...s, itemId: null as string | null }));
-  }, [storeItems, selectedStore, allSuggestions]);
-
-  const filteredSuggestions = useMemo(() => {
-    const q = addQuery.trim().toLowerCase();
-    if (!q) return chainSuggestions.slice(0, 10);
-    return chainSuggestions.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 10);
-  }, [addQuery, chainSuggestions]);
-
-  const activeItems = listItems.filter((i) => !i.checked);
-  const historyItems = listItems.filter((i) => i.checked);
+  const activeItems = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
+  const historyItems = useMemo(() => listItems.filter((i) => i.checked), [listItems]);
 
   function handleAdd(name: string, category: string, itemId: string | null) {
     addItem(key, { name, category: category || 'General', itemId });
-    setAddQuery('');
     refresh();
   }
 
-  function handleAddCustom() {
-    const name = addQuery.trim();
-    if (!name) return;
-    handleAdd(name, 'General', null);
-  }
-
-  function handleToggle(id: string) {
-    toggleItem(key, id);
-    refresh();
-  }
-
-  function handleRemove(id: string) {
-    removeItem(key, id);
-    refresh();
-  }
-
-  function handleReAdd(id: string) {
-    reAddItem(key, id);
-    refresh();
-  }
+  function handleToggle(id: string) { toggleItem(key, id); refresh(); }
+  function handleRemove(id: string) { removeItem(key, id); refresh(); }
+  function handleReAdd(id: string)  { reAddItem(key, id);  refresh(); }
 
   function handleClearHistory() {
-    Alert.alert('Clear History', 'Remove all checked items from history?', [
+    Alert.alert('Clear History', 'Remove all checked items?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: () => { clearHistory(key); refresh(); },
-      },
+      { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(key); refresh(); } },
     ]);
   }
 
@@ -155,70 +254,33 @@ export default function ListScreen() {
     return statusByName.get(item.name.toLowerCase()) ?? null;
   }
 
-  // ── Render helpers ────────────────────────────────────────────────────────
+  // SectionList data
+  const sections = useMemo(() => {
+    const s = [];
+    if (activeItems.length > 0) s.push({ key: 'active', data: activeItems });
+    if (historyOpen && historyItems.length > 0) s.push({ key: 'history', data: historyItems });
+    return s;
+  }, [activeItems, historyItems, historyOpen]);
 
-  function renderActiveItem({ item }: { item: GroceryListItem }) {
-    const status = getStatus(item);
-    return (
-      <View style={styles.listRow}>
-        <TouchableOpacity onPress={() => handleToggle(item.id)} style={styles.checkbox} hitSlop={8}>
-          <View style={styles.checkboxBox} />
-        </TouchableOpacity>
-        <View style={styles.rowInfo}>
-          <Text style={styles.rowName}>{item.name}</Text>
-          <Text style={styles.rowCategory}>{item.category}</Text>
-        </View>
-        {status ? (
-          <StatusBadge status={status} />
-        ) : (
-          <View style={styles.unknownBadge}><Text style={styles.unknownText}>No data</Text></View>
-        )}
-        <TouchableOpacity onPress={() => handleRemove(item.id)} style={styles.iconBtn} hitSlop={8}>
-          <Ionicons name="close" size={16} color="#9CA3AF" />
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  function renderHistoryItem({ item }: { item: GroceryListItem }) {
-    const status = getStatus(item);
-    return (
-      <View style={[styles.listRow, styles.historyRow]}>
-        <TouchableOpacity onPress={() => handleToggle(item.id)} style={styles.checkbox} hitSlop={8}>
-          <View style={styles.checkboxBoxChecked}>
-            <Ionicons name="checkmark" size={12} color="#fff" />
-          </View>
-        </TouchableOpacity>
-        <View style={styles.rowInfo}>
-          <Text style={[styles.rowName, styles.rowNameChecked]}>{item.name}</Text>
-          <Text style={styles.rowCategory}>{item.category}</Text>
-        </View>
-        {status ? <StatusBadge status={status} /> : null}
-        <TouchableOpacity onPress={() => handleReAdd(item.id)} style={styles.reAddBtn} hitSlop={8}>
-          <Ionicons name="add" size={14} color={PRIMARY} />
-          <Text style={styles.reAddText}>Re-add</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // ── Layout ─────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       {/* Store header */}
       <TouchableOpacity style={styles.header} onPress={() => setPickerVisible(true)} activeOpacity={0.75}>
-        <View style={styles.headerLeft}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>Shopping at</Text>
           <View style={styles.storeNameRow}>
             <Text style={styles.storeName} numberOfLines={1}>
               {selectedStore?.name ?? 'Select a store…'}
             </Text>
-            <Ionicons name="chevron-down" size={16} color="#9CA3AF" style={{ marginTop: 2 }} />
+            <Ionicons name="chevron-down" size={15} color="#9CA3AF" style={{ marginTop: 1 }} />
           </View>
         </View>
-        <View style={styles.headerRight}>
-          <Ionicons name="location-outline" size={18} color={PRIMARY} />
-        </View>
+        {activeItems.length > 0 && (
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{activeItems.length}</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       <StorePicker
@@ -227,183 +289,222 @@ export default function ListScreen() {
         onSelect={(name, supabaseId) => setSelectedStore({ name, supabaseId })}
       />
 
-      {/* Add item input */}
-      <View style={styles.addSection}>
-        <View style={styles.addRow}>
-          <Ionicons name="add-circle" size={20} color={PRIMARY} style={{ marginRight: 8 }} />
-          <TextInput
-            ref={addRef}
-            style={styles.addInput}
-            placeholder="Add an item…"
-            placeholderTextColor="#9CA3AF"
-            value={addQuery}
-            onChangeText={setAddQuery}
-            onSubmitEditing={handleAddCustom}
-            returnKeyType="done"
-          />
-          {addQuery.length > 0 && (
-            <TouchableOpacity onPress={handleAddCustom} style={styles.addBtn}>
-              <Text style={styles.addBtnText}>Add</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+      <AddSheet
+        visible={addSheetVisible}
+        suggestions={suggestions}
+        statusByName={statusByName}
+        loading={storeItemsLoading}
+        onAdd={(name, cat, id) => { handleAdd(name, cat, id); }}
+        onClose={() => setAddSheetVisible(false)}
+      />
 
-        {/* Suggestions */}
-        {filteredSuggestions.length > 0 && (
-          <View style={styles.suggestions}>
-            {storeItemsLoading && (
-              <ActivityIndicator size="small" color={PRIMARY} style={{ marginBottom: 4 }} />
-            )}
-            {filteredSuggestions.map((s) => (
-              <TouchableOpacity
-                key={s.name}
-                style={styles.suggestion}
-                onPress={() => handleAdd(s.name, s.category, s.itemId)}
-              >
-                <Text style={styles.suggestionName}>{s.name}</Text>
-                <View style={styles.suggestionRight}>
-                  <Text style={styles.suggestionCategory}>{s.category}</Text>
-                  {s.itemId && statusByName.has(s.name.toLowerCase()) && (
-                    <StatusBadge status={statusByName.get(s.name.toLowerCase())!} small />
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* Active list */}
-      {activeItems.length === 0 && historyItems.length === 0 ? (
+      {/* List — takes all remaining space */}
+      {listItems.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="cart-outline" size={52} color="#D1D5DB" />
+          <Ionicons name="cart-outline" size={56} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>Your list is empty</Text>
           <Text style={styles.emptySub}>
-            Type an item above or pick from the suggestions to get started.
+            Tap the button below to browse items and add them to your list.
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={activeItems}
-          keyExtractor={(i) => i.id}
-          renderItem={renderActiveItem}
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={styles.sep} />}
-          ListEmptyComponent={
-            activeItems.length === 0 ? (
-              <View style={styles.allDone}>
-                <Ionicons name="checkmark-circle" size={28} color={PRIMARY} />
-                <Text style={styles.allDoneText}>All items checked off!</Text>
-              </View>
-            ) : null
-          }
-          ListFooterComponent={
-            historyItems.length > 0 ? (
-              <View style={styles.historySection}>
-                <TouchableOpacity
-                  style={styles.historyHeader}
-                  onPress={() => setHistoryOpen((o) => !o)}
-                >
-                  <View style={styles.historyHeaderLeft}>
-                    <Ionicons
-                      name={historyOpen ? 'chevron-down' : 'chevron-forward'}
-                      size={14}
-                      color="#9CA3AF"
-                    />
-                    <Text style={styles.historyTitle}>
-                      History ({historyItems.length})
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={handleClearHistory}>
-                    <Text style={styles.clearHistoryText}>Clear</Text>
-                  </TouchableOpacity>
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => {
+            if (section.key === 'active') {
+              return activeItems.length > 0 ? (
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>
+                    {activeItems.length} item{activeItems.length !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              ) : null;
+            }
+            // History header
+            return (
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => setHistoryOpen((o) => !o)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionHeaderLeft}>
+                  <Ionicons
+                    name={historyOpen ? 'chevron-down' : 'chevron-forward'}
+                    size={13}
+                    color="#9CA3AF"
+                  />
+                  <Text style={styles.sectionTitle}>
+                    History ({historyItems.length})
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={handleClearHistory} hitSlop={8}>
+                  <Text style={styles.clearText}>Clear</Text>
                 </TouchableOpacity>
-                {historyOpen &&
-                  historyItems.map((item, idx) => (
-                    <View key={item.id}>
-                      {renderHistoryItem({ item })}
-                      {idx < historyItems.length - 1 && <View style={styles.sep} />}
+              </TouchableOpacity>
+            );
+          }}
+          renderItem={({ item, section }) => {
+            const isHistory = section.key === 'history';
+            const status = getStatus(item);
+            if (isHistory) {
+              return (
+                <View style={[styles.row, styles.rowHistory]}>
+                  <TouchableOpacity onPress={() => handleToggle(item.id)} hitSlop={10}>
+                    <View style={styles.checkDone}>
+                      <Ionicons name="checkmark" size={13} color="#fff" />
                     </View>
-                  ))}
+                  </TouchableOpacity>
+                  <Text style={styles.rowNameDone} numberOfLines={1}>{item.name}</Text>
+                  <TouchableOpacity onPress={() => handleReAdd(item.id)} style={styles.reAddBtn} hitSlop={8}>
+                    <Ionicons name="refresh-outline" size={13} color={PRIMARY} />
+                    <Text style={styles.reAddText}>Re-add</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+            return (
+              <View style={styles.row}>
+                <TouchableOpacity onPress={() => handleToggle(item.id)} hitSlop={10}>
+                  <View style={styles.checkEmpty} />
+                </TouchableOpacity>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.rowCat}>{item.category}</Text>
+                </View>
+                <View style={styles.rowRight}>
+                  {status ? (
+                    <StatusDot status={status} labeled />
+                  ) : (
+                    <Text style={styles.noData}>—</Text>
+                  )}
+                  <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={10} style={styles.removeBtn}>
+                    <Ionicons name="close" size={15} color="#D1D5DB" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            ) : null
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
+          ListFooterComponent={<View style={{ height: 100 }} />}
+          ListEmptyComponent={
+            <View style={styles.allDone}>
+              <Ionicons name="checkmark-circle" size={32} color={PRIMARY} />
+              <Text style={styles.allDoneText}>All done!</Text>
+            </View>
           }
         />
       )}
+
+      {/* Sticky "Add Items" bar */}
+      <View style={styles.addBar}>
+        <TouchableOpacity
+          style={styles.addBarBtn}
+          onPress={() => setAddSheetVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add-circle" size={20} color="#fff" />
+          <Text style={styles.addBarText}>Add Items</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
-function StatusBadge({ status, small }: { status: StockStatus; small?: boolean }) {
+// ─── Status dot ───────────────────────────────────────────────────────────────
+function StatusDot({ status, labeled }: { status: StockStatus; labeled?: boolean }) {
   const color = STATUS_COLORS[status];
-  const label = STATUS_LABELS[status];
+  const short = status === 'in-stock' ? 'In Stock' : status === 'out-of-stock' ? 'Out' : 'Uncertain';
   return (
-    <View style={[styles.badge, { backgroundColor: color + '18', borderColor: color + '40' }, small && styles.badgeSmall]}>
-      <View style={[styles.badgeDot, { backgroundColor: color }, small && styles.badgeDotSmall]} />
-      <Text style={[styles.badgeText, { color }, small && styles.badgeTextSmall]}>{label}</Text>
+    <View style={[dot.wrap, { borderColor: color + '50', backgroundColor: color + '15' }]}>
+      <View style={[dot.circle, { backgroundColor: color }]} />
+      {labeled && <Text style={[dot.label, { color }]}>{short}</Text>}
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:          { flex: 1, backgroundColor: '#F9FAFB' },
+  container:        { flex: 1, backgroundColor: '#F9FAFB' },
 
-  header:             { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  headerLeft:         { flex: 1 },
-  headerLabel:        { fontSize: 12, color: '#9CA3AF', fontWeight: '500', marginBottom: 2 },
-  storeNameRow:       { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  storeName:          { fontSize: 17, fontWeight: '700', color: '#111827' },
-  headerRight:        { padding: 4 },
+  header:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  headerLabel:      { fontSize: 11, color: '#9CA3AF', fontWeight: '500', marginBottom: 1 },
+  storeNameRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  storeName:        { fontSize: 17, fontWeight: '700', color: '#111827', flexShrink: 1 },
+  countBadge:       { marginLeft: 10, backgroundColor: PRIMARY, borderRadius: 12, minWidth: 24, height: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
+  countBadgeText:   { color: '#fff', fontSize: 12, fontWeight: '800' },
 
-  addSection:         { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  addRow:             { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
-  addInput:           { flex: 1, fontSize: 15, color: '#111827' },
-  addBtn:             { backgroundColor: PRIMARY, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6, marginLeft: 8 },
-  addBtnText:         { color: '#fff', fontSize: 13, fontWeight: '700' },
+  list:             { paddingHorizontal: 16, paddingTop: 4 },
+  sectionHeader:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 2 },
+  sectionHeaderLeft:{ flexDirection: 'row', alignItems: 'center', gap: 5 },
+  sectionTitle:     { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
+  clearText:        { fontSize: 12, color: '#EF4444', fontWeight: '600' },
 
-  suggestions:        { paddingHorizontal: 8, paddingBottom: 8 },
-  suggestion:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8, justifyContent: 'space-between' },
-  suggestionName:     { fontSize: 14, color: '#111827', fontWeight: '500', flex: 1, marginRight: 8 },
-  suggestionRight:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  suggestionCategory: { fontSize: 11, color: '#9CA3AF' },
+  sep:              { height: 1, backgroundColor: '#F3F4F6', marginLeft: 46 },
 
-  list:               { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
-  sep:                { height: 1, backgroundColor: '#F3F4F6', marginLeft: 52 },
+  row:              { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 10 },
+  rowHistory:       { opacity: 0.7 },
+  rowBody:          { flex: 1, gap: 2, minWidth: 0 },
+  rowName:          { fontSize: 15, fontWeight: '600', color: '#111827' },
+  rowNameDone:      { flex: 1, fontSize: 14, color: '#9CA3AF', textDecorationLine: 'line-through' },
+  rowCat:           { fontSize: 11, color: '#9CA3AF' },
+  rowRight:         { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  noData:           { fontSize: 14, color: '#D1D5DB', fontWeight: '600' },
+  removeBtn:        { padding: 2 },
 
-  listRow:            { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 10 },
-  historyRow:         { opacity: 0.75 },
-  checkbox:           { padding: 2 },
-  checkboxBox:        { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB' },
-  checkboxBoxChecked: { width: 22, height: 22, borderRadius: 6, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  rowInfo:            { flex: 1, gap: 2 },
-  rowName:            { fontSize: 15, fontWeight: '600', color: '#111827' },
-  rowNameChecked:     { textDecorationLine: 'line-through', color: '#9CA3AF', fontWeight: '400' },
-  rowCategory:        { fontSize: 11, color: '#9CA3AF' },
-  iconBtn:            { padding: 4 },
+  checkEmpty:       { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
+  checkDone:        { width: 22, height: 22, borderRadius: 11, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
 
-  unknownBadge:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  unknownText:        { fontSize: 10, color: '#9CA3AF', fontWeight: '600' },
+  reAddBtn:         { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
+  reAddText:        { fontSize: 11, fontWeight: '700', color: PRIMARY },
 
-  reAddBtn:           { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
-  reAddText:          { fontSize: 12, color: PRIMARY, fontWeight: '700' },
+  allDone:          { alignItems: 'center', paddingTop: 28, gap: 6 },
+  allDoneText:      { fontSize: 15, fontWeight: '600', color: PRIMARY },
 
-  badge:              { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, gap: 4 },
-  badgeSmall:         { paddingHorizontal: 6, paddingVertical: 2 },
-  badgeDot:           { width: 6, height: 6, borderRadius: 3 },
-  badgeDotSmall:      { width: 5, height: 5 },
-  badgeText:          { fontSize: 11, fontWeight: '700' },
-  badgeTextSmall:     { fontSize: 10 },
+  empty:            { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 80, paddingHorizontal: 40 },
+  emptyTitle:       { fontSize: 18, fontWeight: '700', color: '#111827' },
+  emptySub:         { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 21 },
 
-  historySection:     { marginTop: 16 },
-  historyHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 4, marginBottom: 4 },
-  historyHeaderLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  historyTitle:       { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
-  clearHistoryText:   { fontSize: 12, color: '#EF4444', fontWeight: '600' },
-
-  allDone:            { alignItems: 'center', paddingTop: 32, gap: 8 },
-  allDoneText:        { fontSize: 15, fontWeight: '600', color: PRIMARY },
-
-  empty:              { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60, paddingHorizontal: 32 },
-  emptyTitle:         { fontSize: 17, fontWeight: '700', color: '#111827' },
-  emptySub:           { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  addBar:           { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12, backgroundColor: 'transparent' },
+  addBarBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
+  addBarText:       { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
+
+const dot = StyleSheet.create({
+  wrap:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
+  circle: { width: 6, height: 6, borderRadius: 3 },
+  label:  { fontSize: 11, fontWeight: '700' },
+});
+
+const sheet = StyleSheet.create({
+  container:   { flex: 1, backgroundColor: '#F9FAFB' },
+  header:      { backgroundColor: '#fff', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  handle:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 14 },
+  titleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  title:       { fontSize: 18, fontWeight: '700', color: '#111827' },
+  doneBtn:     { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#ECFDF5', borderRadius: 10 },
+  doneBtnText: { fontSize: 14, fontWeight: '700', color: PRIMARY },
+  searchRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: '#111827' },
+  list:        { paddingHorizontal: 16, paddingVertical: 8 },
+  sep:         { height: 1, backgroundColor: '#F3F4F6', marginLeft: 48 },
+  row:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 10 },
+  rowLeft:     { flex: 1, gap: 2, minWidth: 0 },
+  rowName:     { fontSize: 15, fontWeight: '600', color: '#111827' },
+  rowCategory: { fontSize: 11, color: '#9CA3AF' },
+  rowRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  addBtn:      { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  customRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
+  customIcon:  { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
+  customLabel: { fontSize: 15, fontWeight: '700', color: PRIMARY },
+  customSub:   { fontSize: 11, color: '#6B7280' },
+  centered:    { paddingVertical: 40, alignItems: 'center' },
+  emptyText:   { fontSize: 14, color: '#9CA3AF' },
+});
+
+// Keep StatusBadge for backwards compat (used nowhere now, but left to avoid TS errors)
+function StatusBadge({ status }: { status: StockStatus }) {
+  return <StatusDot status={status} labeled />;
+}
