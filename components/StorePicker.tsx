@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   chipTextActive:       { color: PRIMARY, fontWeight: '700' },
 
   // States
-  centered:             { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
+  centered:             { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 32, paddingHorizontal: 24 },
   hint:                 { fontSize: 14, color: '#9CA3AF', textAlign: 'center' },
   hintSub:              { fontSize: 12, color: '#D1D5DB', textAlign: 'center' },
   errorText:            { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
@@ -582,8 +582,8 @@ const styles = StyleSheet.create({
   permissionSub:        { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
 
   // Zip input
-  zipRow:               { flexDirection: 'row', gap: 8, width: '100%', maxWidth: 280 },
-  zipInput:             { flex: 1, height: 48, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 16, fontSize: 18, fontWeight: '600', color: '#111827', textAlign: 'center', letterSpacing: 4 },
+  zipRow:               { flexDirection: 'row', gap: 8, alignSelf: 'stretch', marginHorizontal: 0 },
+  zipInput:             { flex: 1, minWidth: 0, height: 48, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 12, fontSize: 18, fontWeight: '600', color: '#111827', textAlign: 'center', letterSpacing: 4 },
   zipInputError:        { borderColor: '#EF4444' },
   zipBtn:               { width: 48, height: 48, backgroundColor: PRIMARY, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   zipBtnDisabled:       { backgroundColor: '#D1D5DB' },
