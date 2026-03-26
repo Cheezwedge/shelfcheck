@@ -36,7 +36,7 @@ import { STATUS_COLORS } from '../../data';
 const PRIMARY = '#1D9E75';
 
 function storeKey(store: SelectedStore | null): string {
-  return store?.supabaseId ?? store?.name ?? '__default__';
+  return store?.name ?? '__default__';
 }
 
 type Suggestion = { name: string; category: string; itemId: string | null };

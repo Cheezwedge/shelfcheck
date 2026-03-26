@@ -39,7 +39,7 @@ type HomeItem = {
 type HomeSection = { key: string; title: string; data: HomeItem[] };
 
 function storeKey(store: SelectedStore | null): string {
-  return store?.supabaseId ?? store?.name ?? '__default__';
+  return store?.name ?? '__default__';
 }
 
 export default function HomeScreen() {
@@ -160,7 +160,8 @@ export default function HomeScreen() {
   const outOfStock = items.filter((i) => i.status === 'out-of-stock').length;
   const uncertain  = items.filter((i) => i.status === 'uncertain').length;
 
-  const noItemsYet = !loading && !error && items.length === 0 && listItemsActive.length === 0 && !!activeStoreName;
+  const noStoreSelected = !loading && !error && !activeStoreName;
+  const noItemsYet = !loading && !error && !!activeStoreName && items.length === 0 && listItemsActive.length === 0;
   const searchEmpty = !loading && !error && !noItemsYet && search.length > 0 && sections.length === 0;
 
   const renderItem = ({ item }: { item: HomeItem }) => (
@@ -258,6 +259,16 @@ export default function HomeScreen() {
           <ActivityIndicator size="large" color={PRIMARY} />
           <Text style={styles.loadingText}>Loading inventory…</Text>
         </View>
+      ) : noStoreSelected ? (
+        <TouchableOpacity style={styles.centered} onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
+          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyStoreTitle}>No store selected</Text>
+          <Text style={styles.emptyStoreSub}>Tap to find nearby grocery stores.</Text>
+          <View style={styles.changeStoreBtn}>
+            <Ionicons name="location-outline" size={15} color={PRIMARY} />
+            <Text style={styles.changeStoreBtnText}>Find stores near me</Text>
+          </View>
+        </TouchableOpacity>
       ) : error ? (
         <TouchableOpacity style={styles.centered} onPress={load} activeOpacity={0.7}>
           <Ionicons name="cloud-offline-outline" size={42} color="#D1D5DB" />
