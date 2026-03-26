@@ -74,13 +74,14 @@ export async function fetchNearbyStores(
 ): Promise<NearbyStore[]> {
   const radiusM = Math.round(radiusMi * 1609.34);
   // Include both node and way elements; "out center" returns centroid for ways
-  const query =
-    `[out:json][timeout:20];` +
-    `(node["shop"="supermarket"](around:${radiusM},${lat},${lon});` +
-    `way["shop"="supermarket"](around:${radiusM},${lat},${lon});` +
-    `node["shop"="grocery"](around:${radiusM},${lat},${lon});` +
-    `way["shop"="grocery"](around:${radiusM},${lat},${lon}););` +
-    `out center 200;`;
+  // Include wholesale (Costco) and department_store (Target) in addition to
+  // the usual supermarket/grocery tags.
+  const shopTypes = ['supermarket', 'grocery', 'wholesale', 'department_store'];
+  const typeQueries = shopTypes.flatMap((t) => [
+    `node["shop"="${t}"](around:${radiusM},${lat},${lon});`,
+    `way["shop"="${t}"](around:${radiusM},${lat},${lon});`,
+  ]).join('');
+  const query = `[out:json][timeout:20];(${typeQueries});out center 200;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -148,4 +149,55 @@ export function saveStore(store: SelectedStore): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {}
+}
+
+// ─── Free-text store name search (not limited to allowed chains) ───────────────
+export interface StoreSearchResult {
+  osmId: string;
+  name: string;
+  chainKey: ChainKey | null;
+  lat: number;
+  lon: number;
+  distanceMi: number;
+}
+
+export async function searchStoresByName(
+  query: string,
+  lat: number,
+  lon: number,
+  radiusMi = 10
+): Promise<StoreSearchResult[]> {
+  const radiusM = Math.round(radiusMi * 1609.34);
+  // Escape special regex chars before sending to Overpass
+  const safe = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const q =
+    `[out:json][timeout:15];` +
+    `(node["name"~"${safe}",i](around:${radiusM},${lat},${lon});` +
+    `way["name"~"${safe}",i](around:${radiusM},${lat},${lon}););` +
+    `out center 30;`;
+
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: `data=${encodeURIComponent(q)}`,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (!res.ok) throw new Error('Search failed. Please try again.');
+
+  const data = await res.json();
+  return (data.elements as any[])
+    .filter((el) => el.tags?.name)
+    .map((el) => {
+      const elLat: number = el.lat ?? el.center?.lat;
+      const elLon: number = el.lon ?? el.center?.lon;
+      return {
+        osmId: String(el.id),
+        name: el.tags.name as string,
+        chainKey: matchChain(el.tags.name) as ChainKey | null,
+        lat: elLat,
+        lon: elLon,
+        distanceMi: toMiles(lat, lon, elLat, elLon),
+      };
+    })
+    .filter((s) => s.lat != null && s.lon != null)
+    .sort((a, b) => a.distanceMi - b.distanceMi);
 }

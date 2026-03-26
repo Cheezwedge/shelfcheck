@@ -18,10 +18,12 @@ import {
   fetchNearbyStores,
   findSupabaseStore,
   saveStore,
+  searchStoresByName,
   CHAINS,
   ALL_CHAIN_KEYS,
   type ChainKey,
   type NearbyStore,
+  type StoreSearchResult,
 } from '../lib/stores';
 import StoreMap from './StoreMap';
 
@@ -56,7 +58,11 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const [zip, setZip] = useState('');
   const [zipError, setZipError] = useState<string | null>(null);
   const [hoveredOsmId, setHoveredOsmId] = useState<string | null>(null);
+  const [storeSearch, setStoreSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<StoreSearchResult[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const zipRef = useRef<TextInput>(null);
+  const searchRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<NearbyStore>>(null);
 
   // Stable reference — only changes when allStores or activeChains changes,
@@ -77,6 +83,8 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
       setCoords(null);
       setAllStores([]);
       setFiltersOpen(false);
+      setStoreSearch('');
+      setSearchResults(null);
       loadFromGPS(radiusMi);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,6 +177,27 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
     onClose();
   }
 
+  async function handleStoreSearch() {
+    const q = storeSearch.trim();
+    if (!q || !coords) return;
+    setSearchLoading(true);
+    try {
+      const results = await searchStoresByName(q, coords.lat, coords.lon, radiusMi);
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  async function handleSelectSearchResult(result: StoreSearchResult) {
+    const supabaseId = await findSupabaseStore(result.name);
+    saveStore({ name: result.name, supabaseId });
+    onSelect(result.name, supabaseId);
+    onClose();
+  }
+
   function handleMapHover(osmId: string | null) {
     setHoveredOsmId(osmId);
     if (osmId) {
@@ -193,6 +222,37 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   // ─── Filter bar ─────────────────────────────────────────────────────────────
   const filterBar = (
     <View style={styles.filterBar}>
+      {/* Store name search */}
+      <View style={styles.storeSearchRow}>
+        <Ionicons name="search" size={15} color="#9CA3AF" style={{ marginRight: 6 }} />
+        <TextInput
+          ref={searchRef}
+          style={styles.storeSearchInput}
+          placeholder="Search for a store by name…"
+          placeholderTextColor="#9CA3AF"
+          value={storeSearch}
+          onChangeText={(t) => { setStoreSearch(t); if (!t) setSearchResults(null); }}
+          onSubmitEditing={handleStoreSearch}
+          returnKeyType="search"
+        />
+        {storeSearch.length > 0 && (
+          <TouchableOpacity onPress={() => { setStoreSearch(''); setSearchResults(null); }} hitSlop={8}>
+            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
+        {storeSearch.length > 0 && (
+          <TouchableOpacity
+            style={styles.storeSearchBtn}
+            onPress={handleStoreSearch}
+            disabled={!coords || searchLoading}
+          >
+            {searchLoading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.storeSearchBtnText}>Search</Text>}
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* Radius pills */}
       <View style={styles.radiusRow}>
         <Text style={styles.filterLabel}>Radius</Text>
@@ -366,8 +426,43 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
           <View style={styles.resultsContainer}>
             {filterBar}
 
-            {/* Map */}
-            {coords ? (
+            {/* Search results overlay */}
+            {searchResults !== null && (
+              <View style={styles.searchResultsPanel}>
+                <View style={styles.searchResultsHeader}>
+                  <Text style={styles.searchResultsTitle}>
+                    {searchResults.length === 0
+                      ? 'No stores found'
+                      : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${storeSearch}"`}
+                  </Text>
+                  <TouchableOpacity onPress={() => { setSearchResults(null); setStoreSearch(''); }}>
+                    <Text style={styles.linkBtnText}>Clear</Text>
+                  </TouchableOpacity>
+                </View>
+                {searchResults.map((r) => (
+                  <TouchableOpacity
+                    key={r.osmId}
+                    style={styles.storeRow}
+                    onPress={() => handleSelectSearchResult(r)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.storeIcon}>
+                      <Ionicons name="storefront-outline" size={20} color={PRIMARY} />
+                    </View>
+                    <View style={styles.storeInfo}>
+                      <Text style={styles.storeName}>{r.name}</Text>
+                      <Text style={styles.storeDist}>
+                        {r.distanceMi < 0.1 ? 'Less than 0.1 mi away' : `${r.distanceMi.toFixed(1)} mi away`}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Regular map — hidden when search results are showing */}
+            {searchResults === null && coords ? (
               <StoreMap
                 stores={filteredStores}
                 center={coords}
@@ -377,8 +472,8 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
               />
             ) : null}
 
-            {/* Store list */}
-            <FlatList
+            {/* Regular store list — hidden when search results are showing */}
+            {searchResults !== null ? null : <FlatList
               ref={listRef}
               data={filteredStores}
               keyExtractor={(s) => s.osmId}
@@ -435,7 +530,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
                   </TouchableOpacity>
                 );
               }}
-            />
+            />}
           </View>
         )}
       </KeyboardAvoidingView>
@@ -451,6 +546,15 @@ const styles = StyleSheet.create({
   title:                { fontSize: 18, fontWeight: '700', color: '#111827' },
   subtitle:             { fontSize: 13, color: '#9CA3AF', marginTop: 4 },
   closeBtn:             { padding: 4 },
+
+  // Store search
+  storeSearchRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, gap: 4 },
+  storeSearchInput:     { flex: 1, fontSize: 13, color: '#111827', paddingVertical: 2 },
+  storeSearchBtn:       { backgroundColor: PRIMARY, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5, marginLeft: 4 },
+  storeSearchBtnText:   { color: '#fff', fontSize: 12, fontWeight: '700' },
+  searchResultsPanel:   { backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', maxHeight: 300 },
+  searchResultsHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  searchResultsTitle:   { fontSize: 13, fontWeight: '600', color: '#6B7280' },
 
   // Filter bar
   filterBar:            { backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', gap: 10 },
