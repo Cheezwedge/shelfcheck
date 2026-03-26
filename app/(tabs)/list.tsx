@@ -49,6 +49,7 @@ function AddSheet({
   statusByName,
   loading,
   onAdd,
+  onChangeQty,
   onClose,
 }: {
   visible: boolean;
@@ -57,12 +58,13 @@ function AddSheet({
   statusByName: Map<string, StockStatus>;
   loading: boolean;
   onAdd: (name: string, category: string, itemId: string | null) => void;
+  onChangeQty: (name: string, delta: number) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<TextInput>(null);
 
-  // Map of lowercased name → quantity already in the active list
+  // name (lowercase) → quantity already in active list
   const inListMap = useMemo(() => {
     const m = new Map<string, number>();
     activeItems.forEach((i) => m.set(i.name.toLowerCase(), i.quantity));
@@ -139,14 +141,14 @@ function AddSheet({
               showCustomAdd ? (
                 <TouchableOpacity
                   style={sheet.customRow}
-                  onPress={() => onAdd(query.trim(), 'General', null)}
+                  onPress={() => { onAdd(query.trim(), 'General', null); setQuery(''); }}
                 >
                   <View style={sheet.customIcon}>
                     <Ionicons name="add" size={18} color={PRIMARY} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={sheet.customLabel}>Add "{query.trim()}"</Text>
-                    <Text style={sheet.customSub}>Custom item</Text>
+                    <Text style={sheet.customSub}>Custom item · tap to add to list</Text>
                   </View>
                 </TouchableOpacity>
               ) : null
@@ -162,30 +164,51 @@ function AddSheet({
               const qty = inListMap.get(s.name.toLowerCase()) ?? 0;
               const inList = qty > 0;
               const status = s.itemId ? statusByName.get(s.name.toLowerCase()) : undefined;
+
               return (
-                <TouchableOpacity
-                  style={[sheet.row, inList && sheet.rowInList]}
-                  onPress={() => onAdd(s.name, s.category, s.itemId)}
-                  activeOpacity={0.7}
-                >
+                <View style={[sheet.row, inList && sheet.rowInList]}>
+                  {/* Name + category */}
                   <View style={sheet.rowLeft}>
                     <Text style={sheet.rowName}>{s.name}</Text>
                     <Text style={sheet.rowCategory}>{s.category}</Text>
                   </View>
+
                   <View style={sheet.rowRight}>
+                    {/* Stock status dot */}
                     {status ? <StatusDot status={status} /> : null}
+
                     {inList ? (
-                      /* Already-in-list badge — tap row to increment qty */
-                      <View style={sheet.inListBadge}>
-                        <Ionicons name="checkmark" size={11} color={PRIMARY} />
-                        <Text style={sheet.inListText}>×{qty}</Text>
+                      /* Quantity stepper — shown when item is already on the list */
+                      <View style={sheet.stepper}>
+                        <TouchableOpacity
+                          onPress={() => onChangeQty(s.name, -1)}
+                          hitSlop={8}
+                          style={[sheet.stepBtn, qty <= 1 && sheet.stepBtnDim]}
+                          disabled={qty <= 1}
+                        >
+                          <Ionicons name="remove" size={14} color={qty <= 1 ? '#C7D2DA' : '#6B7280'} />
+                        </TouchableOpacity>
+                        <Text style={sheet.stepQty}>{qty}</Text>
+                        <TouchableOpacity
+                          onPress={() => onChangeQty(s.name, 1)}
+                          hitSlop={8}
+                          style={sheet.stepBtn}
+                        >
+                          <Ionicons name="add" size={14} color={PRIMARY} />
+                        </TouchableOpacity>
                       </View>
-                    ) : null}
-                    <View style={[sheet.addBtn, inList && sheet.addBtnActive]}>
-                      <Ionicons name="add" size={16} color={inList ? '#fff' : PRIMARY} />
-                    </View>
+                    ) : (
+                      /* Add button — shown when item is not yet on the list */
+                      <TouchableOpacity
+                        onPress={() => onAdd(s.name, s.category, s.itemId)}
+                        style={sheet.addBtn}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="add" size={17} color={PRIMARY} />
+                      </TouchableOpacity>
+                    )}
                   </View>
-                </TouchableOpacity>
+                </View>
               );
             }}
           />
@@ -246,15 +269,38 @@ export default function ListScreen() {
   const activeItems  = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
   const historyItems = useMemo(() => listItems.filter((i) => i.checked),  [listItems]);
 
+  // When all active items are checked off, always reveal history so it's never hidden.
+  const effectiveHistoryOpen = historyOpen || activeItems.length === 0;
+
+  const sections = useMemo(() => {
+    const s: { key: string; data: GroceryListItem[] }[] = [];
+    if (activeItems.length > 0)
+      s.push({ key: 'active', data: activeItems });
+    if (historyItems.length > 0 && effectiveHistoryOpen)
+      s.push({ key: 'history', data: historyItems });
+    return s;
+  }, [activeItems, historyItems, effectiveHistoryOpen]);
+
+  const totalQty = useMemo(
+    () => activeItems.reduce((sum, i) => sum + i.quantity, 0),
+    [activeItems]
+  );
+
   function handleAdd(name: string, category: string, itemId: string | null) {
     addItem(key, { name, category: category || 'General', itemId });
     refresh();
   }
 
-  function handleQty(id: string, delta: number) { changeQuantity(key, id, delta); refresh(); }
-  function handleToggle(id: string)              { toggleItem(key, id);            refresh(); }
-  function handleRemove(id: string)              { removeItem(key, id);            refresh(); }
-  function handleReAdd(id: string)               { reAddItem(key, id);             refresh(); }
+  // Used by AddSheet to change qty by name (item id resolved here)
+  function handleQtyByName(name: string, delta: number) {
+    const item = activeItems.find((i) => i.name.toLowerCase() === name.toLowerCase());
+    if (item) { changeQuantity(key, item.id, delta); refresh(); }
+  }
+
+  function handleQty(id: string, delta: number)  { changeQuantity(key, id, delta); refresh(); }
+  function handleToggle(id: string)               { toggleItem(key, id);            refresh(); }
+  function handleRemove(id: string)               { removeItem(key, id);            refresh(); }
+  function handleReAdd(id: string)                { reAddItem(key, id);             refresh(); }
 
   function handleClearHistory() {
     Alert.alert('Clear History', 'Remove all checked items?', [
@@ -262,19 +308,6 @@ export default function ListScreen() {
       { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(key); refresh(); } },
     ]);
   }
-
-  const sections = useMemo(() => {
-    const s: { key: string; data: GroceryListItem[] }[] = [];
-    if (activeItems.length > 0)                    s.push({ key: 'active',  data: activeItems  });
-    if (historyOpen && historyItems.length > 0)    s.push({ key: 'history', data: historyItems });
-    return s;
-  }, [activeItems, historyItems, historyOpen]);
-
-  // Total items including quantities
-  const totalQty = useMemo(
-    () => activeItems.reduce((sum, i) => sum + i.quantity, 0),
-    [activeItems]
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -309,6 +342,7 @@ export default function ListScreen() {
         statusByName={statusByName}
         loading={storeItemsLoading}
         onAdd={handleAdd}
+        onChangeQty={handleQtyByName}
         onClose={() => setAddSheetVisible(false)}
       />
 
@@ -338,17 +372,21 @@ export default function ListScreen() {
                 </View>
               );
             }
+            // History header
+            const canToggle = activeItems.length > 0; // can only collapse when there are active items
             return (
               <TouchableOpacity
                 style={styles.sectionHeader}
-                onPress={() => setHistoryOpen((o) => !o)}
-                activeOpacity={0.7}
+                onPress={() => canToggle && setHistoryOpen((o) => !o)}
+                activeOpacity={canToggle ? 0.7 : 1}
               >
                 <View style={styles.sectionHeaderLeft}>
-                  <Ionicons
-                    name={historyOpen ? 'chevron-down' : 'chevron-forward'}
-                    size={13} color="#9CA3AF"
-                  />
+                  {canToggle && (
+                    <Ionicons
+                      name={historyOpen ? 'chevron-down' : 'chevron-forward'}
+                      size={13} color="#9CA3AF"
+                    />
+                  )}
                   <Text style={styles.sectionTitle}>
                     History ({historyItems.length})
                   </Text>
@@ -385,17 +423,13 @@ export default function ListScreen() {
 
             return (
               <View style={styles.row}>
-                {/* Checkbox */}
                 <TouchableOpacity onPress={() => handleToggle(item.id)} hitSlop={10}>
                   <View style={styles.checkEmpty} />
                 </TouchableOpacity>
-
-                {/* Name + category */}
                 <View style={styles.rowBody}>
                   <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
                   <Text style={styles.rowCat}>{item.category}</Text>
                 </View>
-
                 {/* Quantity stepper */}
                 <View style={styles.stepper}>
                   <TouchableOpacity
@@ -411,14 +445,8 @@ export default function ListScreen() {
                     <Ionicons name="add" size={14} color="#6B7280" />
                   </TouchableOpacity>
                 </View>
-
                 {/* Status dot */}
-                {status ? (
-                  <StatusDot status={status} />
-                ) : (
-                  <Text style={styles.noData}>—</Text>
-                )}
-
+                {status ? <StatusDot status={status} /> : <Text style={styles.noData}>—</Text>}
                 {/* Remove */}
                 <TouchableOpacity onPress={() => handleRemove(item.id)} hitSlop={10}>
                   <Ionicons name="close" size={15} color="#D1D5DB" />
@@ -428,12 +456,6 @@ export default function ListScreen() {
           }}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListFooterComponent={<View style={{ height: 100 }} />}
-          ListEmptyComponent={
-            <View style={styles.allDone}>
-              <Ionicons name="checkmark-circle" size={32} color={PRIMARY} />
-              <Text style={styles.allDoneText}>All done!</Text>
-            </View>
-          }
         />
       )}
 
@@ -452,7 +474,6 @@ export default function ListScreen() {
   );
 }
 
-// ─── Status dot (small, no label) ─────────────────────────────────────────────
 function StatusDot({ status }: { status: StockStatus }) {
   const color = STATUS_COLORS[status];
   return (
@@ -462,25 +483,20 @@ function StatusDot({ status }: { status: StockStatus }) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container:         { flex: 1, backgroundColor: '#F9FAFB' },
-
   header:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   headerLabel:       { fontSize: 11, color: '#9CA3AF', fontWeight: '500', marginBottom: 1 },
   storeNameRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
   storeName:         { fontSize: 17, fontWeight: '700', color: '#111827', flexShrink: 1 },
   countBadge:        { marginLeft: 10, backgroundColor: PRIMARY, borderRadius: 12, minWidth: 26, height: 26, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   countBadgeText:    { color: '#fff', fontSize: 13, fontWeight: '800' },
-
   list:              { paddingHorizontal: 16, paddingTop: 4 },
   sectionHeader:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 2 },
   sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   sectionTitle:      { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6 },
   clearText:         { fontSize: 12, color: '#EF4444', fontWeight: '600' },
-
   sep:               { height: 1, backgroundColor: '#F3F4F6', marginLeft: 44 },
-
   row:               { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },
   rowHistory:        { opacity: 0.65 },
   rowBody:           { flex: 1, gap: 1, minWidth: 0 },
@@ -488,27 +504,18 @@ const styles = StyleSheet.create({
   rowNameDone:       { flex: 1, fontSize: 14, color: '#9CA3AF', textDecorationLine: 'line-through' },
   rowCat:            { fontSize: 11, color: '#B0B7C3' },
   noData:            { fontSize: 14, color: '#E5E7EB', fontWeight: '600', minWidth: 18, textAlign: 'center' },
-
   checkEmpty:        { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
   checkDone:         { width: 22, height: 22, borderRadius: 11, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
-
-  // Quantity stepper
   stepper:           { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 3, paddingVertical: 2 },
   stepBtn:           { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
   stepBtnDisabled:   { opacity: 0.4 },
   stepQty:           { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 22, textAlign: 'center' },
-
   historyQty:        { fontSize: 12, fontWeight: '700', color: '#9CA3AF' },
   reAddBtn:          { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
   reAddText:         { fontSize: 11, fontWeight: '700', color: PRIMARY },
-
-  allDone:           { alignItems: 'center', paddingTop: 28, gap: 6 },
-  allDoneText:       { fontSize: 15, fontWeight: '600', color: PRIMARY },
-
   empty:             { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 80, paddingHorizontal: 40 },
   emptyTitle:        { fontSize: 18, fontWeight: '700', color: '#111827' },
   emptySub:          { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 21 },
-
   addBar:            { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12 },
   addBarBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
   addBarText:        { color: '#fff', fontSize: 16, fontWeight: '700' },
@@ -531,22 +538,17 @@ const sheet = StyleSheet.create({
   searchInput:  { flex: 1, fontSize: 15, color: '#111827' },
   list:         { paddingHorizontal: 16, paddingVertical: 8 },
   sep:          { height: 1, backgroundColor: '#F3F4F6', marginLeft: 8 },
-
   row:          { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 10 },
   rowInList:    { backgroundColor: '#F0FDF8' },
   rowLeft:      { flex: 1, gap: 2, minWidth: 0 },
   rowName:      { fontSize: 15, fontWeight: '600', color: '#111827' },
   rowCategory:  { fontSize: 11, color: '#9CA3AF' },
   rowRight:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-
-  // "Already in list" badge
-  inListBadge:  { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7' },
-  inListText:   { fontSize: 12, fontWeight: '700', color: PRIMARY },
-
-  // + button
-  addBtn:       { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  addBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-
+  stepper:      { flexDirection: 'row', alignItems: 'center', gap: 0, backgroundColor: '#F3F4F6', borderRadius: 8, overflow: 'hidden' },
+  stepBtn:      { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  stepBtnDim:   { opacity: 0.35 },
+  stepQty:      { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 28, textAlign: 'center' },
+  addBtn:       { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
   customRow:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
   customIcon:   { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
   customLabel:  { fontSize: 15, fontWeight: '700', color: PRIMARY },
