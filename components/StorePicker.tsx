@@ -61,6 +61,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const [zipError, setZipError] = useState<string | null>(null);
   const [hoveredOsmId, setHoveredOsmId] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(() => getFavorites());
+  const [viewMode, setViewMode] = useState<'nearby' | 'saved'>('nearby');
   const [storeSearch, setStoreSearch] = useState('');
   const [searchResults, setSearchResults] = useState<StoreSearchResult[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -100,6 +101,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
       setFiltersOpen(false);
       setStoreSearch('');
       setSearchResults(null);
+      setViewMode('nearby');
       loadFromGPS(radiusMi);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,6 +227,13 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   function handleFavorite(storeName: string) {
     toggleFavorite(storeName);
     setFavorites(getFavorites());
+  }
+
+  async function handleSelectFavorite(name: string) {
+    const supabaseId = await findSupabaseStore(name).catch(() => null);
+    saveStore({ name, supabaseId });
+    onSelect(name, supabaseId);
+    onClose();
   }
 
   function toggleChain(key: ChainKey) {
@@ -357,15 +366,64 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
         <View style={styles.header}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Nearby Stores</Text>
+            <Text style={styles.title}>Find a Store</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
               <Ionicons name="close" size={22} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.subtitle}>Tap a store to select it</Text>
+          {/* Nearby / Saved toggle */}
+          <View style={styles.modeToggleRow}>
+            <TouchableOpacity
+              style={[styles.modeBtn, viewMode === 'nearby' && styles.modeBtnActive]}
+              onPress={() => setViewMode('nearby')}
+            >
+              <Ionicons name="navigate-outline" size={13} color={viewMode === 'nearby' ? '#fff' : '#6B7280'} />
+              <Text style={[styles.modeBtnText, viewMode === 'nearby' && styles.modeBtnTextActive]}>Nearby</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, viewMode === 'saved' && styles.modeBtnActive]}
+              onPress={() => setViewMode('saved')}
+            >
+              <Ionicons name="star-outline" size={13} color={viewMode === 'saved' ? '#fff' : '#6B7280'} />
+              <Text style={[styles.modeBtnText, viewMode === 'saved' && styles.modeBtnTextActive]}>
+                {'Saved'}
+                {favorites.size > 0 ? ` (${favorites.size})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {loading ? (
+        {viewMode === 'saved' ? (
+          /* ── Saved stores view ─────────────────────────────────────────── */
+          favorites.size === 0 ? (
+            <View style={styles.centered}>
+              <Ionicons name="star-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.hint}>No saved stores yet.</Text>
+              <Text style={styles.hintSub}>Tap ★ on any store in the Nearby list to save it.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={[...favorites]}
+              keyExtractor={(name) => name}
+              contentContainerStyle={styles.list}
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              renderItem={({ item: name }) => (
+                <View style={styles.storeRow}>
+                  <View style={[styles.storeIcon, styles.storeIconFav]}>
+                    <Ionicons name="star" size={18} color="#F59E0B" />
+                  </View>
+                  <Text style={[styles.storeName, { flex: 1 }]}>{name}</Text>
+                  <TouchableOpacity onPress={() => handleFavorite(name)} hitSlop={8} style={styles.starBtn}>
+                    <Ionicons name="star" size={17} color="#F59E0B" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleSelectFavorite(name)} style={styles.selectBtn}>
+                    <Text style={styles.selectBtnText}>Select</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          )
+        ) : loading ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={PRIMARY} />
             <Text style={styles.hint}>Finding stores near you…</Text>
@@ -631,6 +689,19 @@ const styles = StyleSheet.create({
   changeZipRow:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingHorizontal: 2 },
   emptyList:            { alignItems: 'center', gap: 8, paddingVertical: 32 },
   separator:            { height: 1, backgroundColor: '#F3F4F6', marginLeft: 60 },
+  // Mode toggle
+  modeToggleRow:        { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 10, padding: 3, gap: 2, marginTop: 12 },
+  modeBtn:              { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, borderRadius: 8 },
+  modeBtnActive:        { backgroundColor: PRIMARY },
+  modeBtnText:          { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  modeBtnTextActive:    { color: '#fff' },
+
+  // Saved view
+  storeIconFav:         { backgroundColor: '#FEF3C7' },
+  selectBtn:            { backgroundColor: PRIMARY, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  selectBtnText:        { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  // Store rows
   storeRow:             { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 12 },
   storeRowHighlighted:  { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7' },
   storeRowMain:         { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },

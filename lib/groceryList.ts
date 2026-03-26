@@ -40,7 +40,9 @@ export function getList(storeKey: string): GroceryListItem[] {
 
 /**
  * Adds an item to the list.
- * If an unchecked item with the same name already exists, increments its quantity instead.
+ * - If an unchecked item with the same name exists → increment quantity.
+ * - If a checked (history) item with the same name exists → re-add it (prevents history duplicates).
+ * - Otherwise → add a new item.
  */
 export function addItem(
   storeKey: string,
@@ -48,29 +50,42 @@ export function addItem(
 ): void {
   const all = loadAll();
   const list = all[storeKey] ?? [];
-  const dupIdx = list.findIndex(
-    (i) => !i.checked && i.name.toLowerCase() === item.name.toLowerCase()
-  );
-  if (dupIdx !== -1) {
-    // Increment quantity of existing item
+  const lower = item.name.toLowerCase();
+
+  // 1. Unchecked duplicate → increment quantity
+  const uncheckedIdx = list.findIndex((i) => !i.checked && i.name.toLowerCase() === lower);
+  if (uncheckedIdx !== -1) {
     all[storeKey] = list.map((i, idx) =>
-      idx === dupIdx ? { ...i, quantity: (i.quantity ?? 1) + 1 } : i
+      idx === uncheckedIdx ? { ...i, quantity: (i.quantity ?? 1) + 1 } : i
     );
-  } else {
-    all[storeKey] = [
-      {
-        id: makeId(),
-        itemId: item.itemId,
-        name: item.name,
-        category: item.category,
-        quantity: 1,
-        checked: false,
-        addedAt: new Date().toISOString(),
-        checkedAt: null,
-      },
-      ...list,
-    ];
+    saveAll(all);
+    return;
   }
+
+  // 2. Checked (history) duplicate → re-add to active list (no new entry created)
+  const checkedIdx = list.findIndex((i) => i.checked && i.name.toLowerCase() === lower);
+  if (checkedIdx !== -1) {
+    all[storeKey] = list.map((i, idx) =>
+      idx === checkedIdx ? { ...i, checked: false, checkedAt: null } : i
+    );
+    saveAll(all);
+    return;
+  }
+
+  // 3. Brand new item
+  all[storeKey] = [
+    {
+      id: makeId(),
+      itemId: item.itemId,
+      name: item.name,
+      category: item.category,
+      quantity: 1,
+      checked: false,
+      addedAt: new Date().toISOString(),
+      checkedAt: null,
+    },
+    ...list,
+  ];
   saveAll(all);
 }
 

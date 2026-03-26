@@ -226,7 +226,6 @@ export default function ListScreen() {
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
   const [storeItemsLoading, setStoreItemsLoading] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(true);
 
   const key = storeKey(selectedStore);
 
@@ -266,20 +265,27 @@ export default function ListScreen() {
     ];
   }, [storeItems, selectedStore]);
 
-  const activeItems  = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
-  const historyItems = useMemo(() => listItems.filter((i) => i.checked),  [listItems]);
+  const activeItems = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
 
-  // When all active items are checked off, always reveal history so it's never hidden.
-  const effectiveHistoryOpen = historyOpen || activeItems.length === 0;
+  // Deduplicate history by name (keeps first occurrence — most recently added)
+  const historyItems = useMemo(() => {
+    const seen = new Set<string>();
+    return listItems.filter((i) => i.checked).filter((i) => {
+      const k = i.name.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [listItems]);
 
   const sections = useMemo(() => {
     const s: { key: string; data: GroceryListItem[] }[] = [];
     if (activeItems.length > 0)
       s.push({ key: 'active', data: activeItems });
-    if (historyItems.length > 0 && effectiveHistoryOpen)
+    if (historyItems.length > 0)
       s.push({ key: 'history', data: historyItems });
     return s;
-  }, [activeItems, historyItems, effectiveHistoryOpen]);
+  }, [activeItems, historyItems]);
 
   const totalQty = useMemo(
     () => activeItems.reduce((sum, i) => sum + i.quantity, 0),
@@ -372,21 +378,10 @@ export default function ListScreen() {
                 </View>
               );
             }
-            // History header
-            const canToggle = activeItems.length > 0; // can only collapse when there are active items
+            // History header (always visible, no collapse)
             return (
-              <TouchableOpacity
-                style={styles.sectionHeader}
-                onPress={() => canToggle && setHistoryOpen((o) => !o)}
-                activeOpacity={canToggle ? 0.7 : 1}
-              >
+              <View style={styles.sectionHeader}>
                 <View style={styles.sectionHeaderLeft}>
-                  {canToggle && (
-                    <Ionicons
-                      name={historyOpen ? 'chevron-down' : 'chevron-forward'}
-                      size={13} color="#9CA3AF"
-                    />
-                  )}
                   <Text style={styles.sectionTitle}>
                     History ({historyItems.length})
                   </Text>
@@ -394,7 +389,7 @@ export default function ListScreen() {
                 <TouchableOpacity onPress={handleClearHistory} hitSlop={8}>
                   <Text style={styles.clearText}>Clear</Text>
                 </TouchableOpacity>
-              </TouchableOpacity>
+              </View>
             );
           }}
           renderItem={({ item, section }) => {
