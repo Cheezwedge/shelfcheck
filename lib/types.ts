@@ -14,6 +14,7 @@ export interface ItemRow {
 /** UI-facing shape used by screens */
 export interface LiveItem {
   id: string;
+  storeId: string;
   name: string;
   category: string;
   status: StockStatus;              // guaranteed non-null (null → 'uncertain')

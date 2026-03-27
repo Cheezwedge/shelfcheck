@@ -12,6 +12,7 @@ export const DEFAULT_STORE_ID = 'a1b2c3d4-0000-0000-0000-000000000001';
 function toLocalItem(row: ItemRow): LiveItem {
   return {
     id: row.id,
+    storeId: row.store_id,
     name: row.name,
     category: row.category,
     status: row.status ?? 'uncertain',
@@ -73,12 +74,13 @@ export async function fetchStoreName(storeId = DEFAULT_STORE_ID): Promise<string
  */
 export async function submitReport(
   itemId: string,
+  storeId: string,
   status: Extract<StockStatus, 'in-stock' | 'out-of-stock'>,
   userId: string
 ): Promise<string> {
   const { data, error } = await supabase
     .from('reports')
-    .insert({ item_id: itemId, status, user_id: userId })
+    .insert({ item_id: itemId, store_id: storeId, status, user_id: userId })
     .select('id')
     .single();
 
@@ -148,7 +150,11 @@ export async function upsertStore(name: string): Promise<string> {
 export interface Profile {
   id: string;
   points: number;
+  pending_points: number;
   reports_count: number;
+  accuracy_ratio: number;
+  streak_days: number;
+  joined_at: string | null;
 }
 
 /**
@@ -158,7 +164,7 @@ export interface Profile {
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, points, reports_count')
+    .select('id, points, pending_points, reports_count, accuracy_ratio, streak_days, joined_at')
     .eq('id', userId)
     .single();
 

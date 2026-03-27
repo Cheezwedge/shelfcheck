@@ -59,7 +59,7 @@ export default function ReportScreen() {
     if (!selected || !item) return;
     setSubmitting(true);
     try {
-      await submitReport(item.id, selected, getReportingUserId(session));
+      await submitReport(item.id, item.storeId, selected, getReportingUserId(session));
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {
@@ -139,7 +139,7 @@ export default function ReportScreen() {
           <Text style={styles.successSub}>
             {alreadyReported
               ? 'You\'ve already reported this item today.'
-              : `+${POINTS_PER_REPORT} pts added to your account`}
+              : `+${POINTS_PER_REPORT} pts pending — confirmed in ~4h if unchallenged`}
           </Text>
         </View>
       </SafeAreaView>
