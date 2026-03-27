@@ -1,265 +1,527 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
+  FlatList,
   SectionList,
   TouchableOpacity,
+  Modal,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  StockStatus,
-  STATUS_COLORS,
-  STATUS_LABELS,
-  formatTimeAgo,
-} from '../../data';
-import { fetchItems, fetchStoreName, DEFAULT_STORE_ID } from '../../lib/api';
+import { StockStatus, STATUS_COLORS, STATUS_LABELS, formatTimeAgo } from '../../data';
+import { fetchItems, upsertItem, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
-import { useFocusEffect } from 'expo-router';
-import { getSavedStore, type SelectedStore } from '../../lib/stores';
-import { getList, type GroceryListItem } from '../../lib/groceryList';
+import { getSavedStore, matchChain, type SelectedStore } from '../../lib/stores';
+import { getSampleItems } from '../../lib/sampleItems';
+import {
+  getList,
+  addItem,
+  changeQuantity,
+  toggleItem,
+  removeItem,
+  reAddItem,
+  clearHistory,
+  type GroceryListItem,
+} from '../../lib/groceryList';
 import StorePicker from '../../components/StorePicker';
 
 const PRIMARY = '#1D9E75';
-
-// Display item: merges Supabase LiveItem shape + grocery list metadata
-type HomeItem = {
-  id: string;           // Supabase item ID, empty string if no match
-  name: string;
-  category: string;
-  status: StockStatus | null;
-  lastReportedAt: string | null;
-  onList: boolean;      // true when item is on the user's active grocery list
-};
-
-type HomeSection = { key: string; title: string; data: HomeItem[] };
 
 function storeKey(store: SelectedStore | null): string {
   return store?.osmId ?? store?.name ?? '__default__';
 }
 
-export default function HomeScreen() {
-  const router = useRouter();
-  const [items, setItems] = useState<LiveItem[]>([]);
-  const [storeName, setStoreName] = useState('');
-  const [search, setSearch] = useState('');
-  const [pickerVisible, setPickerVisible] = useState(false);
-  // Lazy-init from localStorage so the first render already has the saved store,
-  // preventing a flash of the default Supabase store on page refresh.
-  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [listItems, setListItems] = useState<GroceryListItem[]>([]);
+type Suggestion = { name: string; category: string; itemId: string | null };
 
-  const activeStoreId = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
-  const activeStoreName = selectedStore?.name ?? null;
-  const sk = storeKey(selectedStore);
+// ─── Section row types ────────────────────────────────────────────────────────
+type ActiveRow  = { kind: 'active';  list: GroceryListItem; live: LiveItem | null };
+type StoreRow   = { kind: 'store';   live: LiveItem };
+type HistoryRow = { kind: 'history'; list: GroceryListItem };
+type ShopRow = ActiveRow | StoreRow | HistoryRow;
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const storeId = activeStoreId;
-      if (activeStoreName && !selectedStore?.supabaseId) {
-        // Store selected from map but not yet in our DB
-        setItems([]);
-        setStoreName(activeStoreName);
-        setLoading(false);
-        return;
-      }
-      const [itemData, name] = await Promise.all([
-        fetchItems(storeId),
-        fetchStoreName(storeId),
-      ]);
-      setItems(itemData);
-      setStoreName(name);
-    } catch (e) {
-      setError('Could not load inventory. Tap to retry.');
-    } finally {
-      setLoading(false);
+// ─── Add-Items Sheet ──────────────────────────────────────────────────────────
+function AddSheet({
+  visible,
+  suggestions,
+  activeItems,
+  statusByName,
+  loading,
+  onAdd,
+  onChangeQty,
+  onClose,
+}: {
+  visible: boolean;
+  suggestions: Suggestion[];
+  activeItems: GroceryListItem[];
+  statusByName: Map<string, StockStatus>;
+  loading: boolean;
+  onAdd: (name: string, category: string, itemId: string | null) => void;
+  onChangeQty: (name: string, delta: number) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  const inListMap = useMemo(() => {
+    const m = new Map<string, number>();
+    activeItems.forEach((i) => m.set(i.name.toLowerCase(), i.quantity));
+    return m;
+  }, [activeItems]);
+
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      setTimeout(() => inputRef.current?.focus(), 300);
     }
-  }, [activeStoreId, activeStoreName, selectedStore]);
+  }, [visible]);
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? suggestions.filter((s) => s.name.toLowerCase().includes(q)) : suggestions;
+  }, [query, suggestions]);
+
+  const showCustomAdd =
+    query.trim().length > 0 &&
+    !suggestions.some((s) => s.name.toLowerCase() === query.trim().toLowerCase());
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        style={sheet.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={sheet.header}>
+          <View style={sheet.handle} />
+          <View style={sheet.titleRow}>
+            <Text style={sheet.title}>Add Items</Text>
+            <TouchableOpacity onPress={onClose} style={sheet.doneBtn}>
+              <Text style={sheet.doneBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={sheet.searchRow}>
+            <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+            <TextInput
+              ref={inputRef}
+              style={sheet.searchInput}
+              placeholder="Search or type a custom item…"
+              placeholderTextColor="#9CA3AF"
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={() => {
+                if (showCustomAdd) { onAdd(query.trim(), 'General', null); setQuery(''); }
+              }}
+              returnKeyType="done"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={sheet.centered}>
+            <ActivityIndicator color={PRIMARY} />
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(s) => s.name}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={sheet.list}
+            ItemSeparatorComponent={() => <View style={sheet.sep} />}
+            ListHeaderComponent={
+              showCustomAdd ? (
+                <TouchableOpacity
+                  style={sheet.customRow}
+                  onPress={() => { onAdd(query.trim(), 'General', null); setQuery(''); }}
+                >
+                  <View style={sheet.customIcon}>
+                    <Ionicons name="add" size={18} color={PRIMARY} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={sheet.customLabel}>Add "{query.trim()}"</Text>
+                    <Text style={sheet.customSub}>Custom item · tap to add to list</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null
+            }
+            ListEmptyComponent={
+              !showCustomAdd ? (
+                <View style={sheet.centered}>
+                  <Text style={sheet.emptyText}>No matching items found.</Text>
+                </View>
+              ) : null
+            }
+            renderItem={({ item: s }) => {
+              const qty = inListMap.get(s.name.toLowerCase()) ?? 0;
+              const inList = qty > 0;
+              const status = s.itemId ? statusByName.get(s.name.toLowerCase()) : undefined;
+              return (
+                <View style={[sheet.row, inList && sheet.rowInList]}>
+                  <View style={sheet.rowLeft}>
+                    <Text style={sheet.rowName}>{s.name}</Text>
+                    <Text style={sheet.rowCategory}>{s.category}</Text>
+                  </View>
+                  <View style={sheet.rowRight}>
+                    {status ? <SheetStatusDot status={status} /> : null}
+                    {inList ? (
+                      <View style={sheet.stepper}>
+                        <TouchableOpacity
+                          onPress={() => onChangeQty(s.name, -1)}
+                          hitSlop={8}
+                          style={[sheet.stepBtn, qty <= 1 && sheet.stepBtnDim]}
+                          disabled={qty <= 1}
+                        >
+                          <Ionicons name="remove" size={14} color={qty <= 1 ? '#C7D2DA' : '#6B7280'} />
+                        </TouchableOpacity>
+                        <Text style={sheet.stepQty}>{qty}</Text>
+                        <TouchableOpacity onPress={() => onChangeQty(s.name, 1)} hitSlop={8} style={sheet.stepBtn}>
+                          <Ionicons name="add" size={14} color={PRIMARY} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => onAdd(s.name, s.category, s.itemId)}
+                        style={sheet.addBtn}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="add" size={17} color={PRIMARY} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            }}
+          />
+        )}
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function ShopScreen() {
+  const router = useRouter();
+
+  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
+  const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
+  const [storeItemsLoading, setStoreItemsLoading] = useState(false);
+  const [listItems, setListItems] = useState<GroceryListItem[]>([]);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const sk = storeKey(selectedStore);
+  const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
+
+  const refresh = useCallback(() => setListItems(getList(sk)), [sk]);
+
+  // Reload grocery list when store key changes
+  useEffect(() => { setListItems(getList(sk)); }, [sk]);
+
+  // Fetch Supabase items when store changes
   useEffect(() => {
-    setLoading(true);
-    load();
+    setStoreItemsLoading(true);
+    fetchItems(sid)
+      .then(setStoreItems)
+      .catch(() => setStoreItems([]))
+      .finally(() => setStoreItemsLoading(false));
+  }, [sid]);
 
-    // Realtime: re-fetch whenever any report is inserted so badges update live
+  // Realtime subscription
+  useEffect(() => {
     const channel = supabase
-      .channel('reports-live')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reports' },
-        () => load()
-      )
+      .channel('shop-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reports' }, () => {
+        fetchItems(sid).then(setStoreItems).catch(() => {});
+      })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
-  }, [load]);
+  }, [sid]);
 
-  // Reload grocery list whenever the selected store changes
-  useEffect(() => {
-    setListItems(getList(sk));
-  }, [sk]);
-
-  // Reload Supabase items + grocery list whenever this tab becomes focused.
-  // This ensures newly upserted items (added from the List tab) appear immediately.
+  // Reload on tab focus (skip initial mount)
   const isMounted = useRef(false);
   useFocusEffect(useCallback(() => {
-    if (!isMounted.current) { isMounted.current = true; return; } // skip initial mount (load() handles it)
-    load();
-    setListItems(getList(sk));
-  }, [load, sk]));
+    if (!isMounted.current) { isMounted.current = true; return; }
+    refresh();
+    fetchItems(sid).then(setStoreItems).catch(() => {});
+  }, [refresh, sid]));
 
-  // Active (unchecked) grocery list items
-  const listItemsActive = useMemo(
-    () => listItems.filter((i) => !i.checked),
-    [listItems]
+  // Derived state
+  const activeItems = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
+
+  const historyItems = useMemo(() => {
+    const seen = new Set<string>();
+    return listItems.filter((i) => i.checked).filter((i) => {
+      const k = i.name.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [listItems]);
+
+  const activeNameSet = useMemo(
+    () => new Set(activeItems.map((i) => i.name.toLowerCase())),
+    [activeItems]
   );
 
-  // Names of items on the list (for filtering the "All Items" section)
-  const listNameSet = useMemo(
-    () => new Set(listItemsActive.map((i) => i.name.toLowerCase())),
-    [listItemsActive]
+  const statusByName = useMemo(() => {
+    const m = new Map<string, StockStatus>();
+    storeItems.forEach((i) => m.set(i.name.toLowerCase(), i.status));
+    return m;
+  }, [storeItems]);
+
+  const suggestions = useMemo<Suggestion[]>(() => {
+    const chainKey = matchChain(selectedStore?.name ?? '');
+    const samples = getSampleItems(chainKey).map((s) => ({ ...s, itemId: null as string | null }));
+    const supabaseNames = new Set(storeItems.map((i) => i.name.toLowerCase()));
+    return [
+      ...storeItems.map((i) => ({ name: i.name, category: i.category, itemId: i.id })),
+      ...samples.filter((s) => !supabaseNames.has(s.name.toLowerCase())),
+    ];
+  }, [storeItems, selectedStore]);
+
+  // Build section rows, filtered by search
+  const sections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const matches = (name: string) => !q || name.toLowerCase().includes(q);
+
+    const activeRows: ShopRow[] = activeItems
+      .filter((li) => matches(li.name))
+      .map((li) => ({
+        kind: 'active' as const,
+        list: li,
+        live: storeItems.find((s) => s.name.toLowerCase() === li.name.toLowerCase()) ?? null,
+      }));
+
+    const storeRows: ShopRow[] = storeItems
+      .filter((s) => !activeNameSet.has(s.name.toLowerCase()) && matches(s.name))
+      .map((s) => ({ kind: 'store' as const, live: s }));
+
+    const historyRows: ShopRow[] = historyItems
+      .filter((li) => matches(li.name))
+      .map((li) => ({ kind: 'history' as const, list: li }));
+
+    const result: { key: string; title: string; data: ShopRow[] }[] = [];
+    if (activeRows.length > 0)
+      result.push({ key: 'active', title: 'MY LIST', data: activeRows });
+    if (storeRows.length > 0)
+      result.push({ key: 'store', title: 'AT THIS STORE', data: storeRows });
+    if (historyRows.length > 0)
+      result.push({ key: 'history', title: `HISTORY (${historyItems.length})`, data: historyRows });
+    return result;
+  }, [activeItems, storeItems, historyItems, activeNameSet, search]);
+
+  const totalQty = useMemo(
+    () => activeItems.reduce((sum, i) => sum + i.quantity, 0),
+    [activeItems]
   );
 
-  // "My List" section: grocery list items merged with Supabase availability data
-  const myListSection = useMemo((): HomeItem[] => {
-    if (!listItemsActive.length) return [];
-    return listItemsActive
-      .filter((li) => !search || li.name.toLowerCase().includes(search.toLowerCase()))
-      .map((li) => {
-        const match = items.find((i) => i.name.toLowerCase() === li.name.toLowerCase());
-        return {
-          id: match?.id ?? '',
-          name: li.name,
-          category: li.category,
-          status: match?.status ?? null,
-          lastReportedAt: match?.lastReportedAt ?? null,
-          onList: true,
-        };
-      });
-  }, [listItemsActive, items, search]);
+  // Handlers
+  function handleAdd(name: string, category: string, itemId: string | null) {
+    addItem(sk, { name, category: category || 'General', itemId });
+    refresh();
+    if (!itemId && selectedStore?.supabaseId) {
+      upsertItem(selectedStore.supabaseId, name, category || 'General')
+        .then(() => fetchItems(selectedStore.supabaseId!).then(setStoreItems).catch(() => {}))
+        .catch(() => {});
+    }
+  }
 
-  // "All Items" section: Supabase items NOT on the grocery list
-  const allItemsSection = useMemo((): HomeItem[] => {
-    return items
-      .filter((i) => !listNameSet.has(i.name.toLowerCase()))
-      .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()))
-      .map((i) => ({ ...i, onList: false }));
-  }, [items, listNameSet, search]);
+  function handleQtyByName(name: string, delta: number) {
+    const item = activeItems.find((i) => i.name.toLowerCase() === name.toLowerCase());
+    if (item) { changeQuantity(sk, item.id, delta); refresh(); }
+  }
 
-  const sections = useMemo((): HomeSection[] => {
-    const s: HomeSection[] = [];
-    if (myListSection.length > 0)
-      s.push({ key: 'list', title: 'My List', data: myListSection });
-    if (allItemsSection.length > 0)
-      s.push({ key: 'all', title: listItemsActive.length > 0 ? 'All Items' : '', data: allItemsSection });
-    return s;
-  }, [myListSection, allItemsSection, listItemsActive]);
+  function handleQty(id: string, delta: number)  { changeQuantity(sk, id, delta); refresh(); }
+  function handleToggle(id: string)               { toggleItem(sk, id);            refresh(); }
+  function handleRemove(id: string)               { removeItem(sk, id);            refresh(); }
+  function handleReAdd(id: string)                { reAddItem(sk, id);             refresh(); }
 
-  const inStock    = items.filter((i) => i.status === 'in-stock').length;
-  const outOfStock = items.filter((i) => i.status === 'out-of-stock').length;
-  const uncertain  = items.filter((i) => i.status === 'uncertain').length;
+  function handleClearHistory() {
+    Alert.alert('Clear History', 'Remove all checked items?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(sk); refresh(); } },
+    ]);
+  }
 
-  const noStoreSelected = !loading && !error && !activeStoreName;
-  const noItemsYet = !loading && !error && !!activeStoreName && items.length === 0 && listItemsActive.length === 0;
-  const searchEmpty = !loading && !error && !noItemsYet && search.length > 0 && sections.length === 0;
-
-  // All items with an ID are reportable; grocery list items are always tappable
-  const canReport = (item: HomeItem) => !!item.id || item.onList;
-
-  const handleItemPress = (item: HomeItem) => {
-    if (item.id) {
-      router.push(`/report/${item.id}`);
-    } else if (item.onList) {
+  function handleReportActive(row: ActiveRow) {
+    if (row.live) {
+      router.push(`/report/${row.live.id}`);
+    } else {
       router.push({
         pathname: '/report/[id]',
         params: {
           id: 'new',
-          name: item.name,
-          category: item.category,
+          name: row.list.name,
+          category: row.list.category,
           storeId: selectedStore?.supabaseId ?? '',
           storeName: selectedStore?.name ?? '',
         },
       });
     }
-  };
+  }
 
-  const renderItem = ({ item }: { item: HomeItem }) => (
-    <TouchableOpacity
-      style={[styles.itemCard, item.onList && styles.itemCardOnList]}
-      onPress={() => handleItemPress(item)}
-      activeOpacity={canReport(item) ? 0.7 : 1}
-    >
-      <View style={styles.itemLeft}>
-        {item.onList && (
-          <View style={styles.onListRow}>
-            <Ionicons name="cart" size={11} color={PRIMARY} />
-            <Text style={styles.onListLabel}>On my list</Text>
+  function handleAddStoreItem(live: LiveItem) {
+    addItem(sk, { name: live.name, category: live.category, itemId: live.id });
+    refresh();
+  }
+
+  const isEmpty = sections.length === 0 && !storeItemsLoading;
+  const noStore = !selectedStore;
+
+  const renderRow = ({ item }: { item: ShopRow }) => {
+    if (item.kind === 'active') {
+      const status = item.live?.status ?? null;
+      return (
+        <View style={styles.row}>
+          <TouchableOpacity onPress={() => handleToggle(item.list.id)} hitSlop={10}>
+            <View style={styles.checkEmpty} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.rowBody} onPress={() => handleReportActive(item)} activeOpacity={0.7}>
+            <Text style={styles.rowName} numberOfLines={1}>{item.list.name}</Text>
+            <View style={styles.rowMeta}>
+              <Text style={styles.rowCat}>{item.list.category}</Text>
+              {item.live?.lastReportedAt ? (
+                <Text style={styles.rowTime}> · {formatTimeAgo(item.live.lastReportedAt)}</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              onPress={() => handleQty(item.list.id, -1)}
+              hitSlop={8}
+              style={[styles.stepBtn, item.list.quantity <= 1 && styles.stepBtnDim]}
+              disabled={item.list.quantity <= 1}
+            >
+              <Ionicons name="remove" size={13} color={item.list.quantity <= 1 ? '#D1D5DB' : '#6B7280'} />
+            </TouchableOpacity>
+            <Text style={styles.stepQty}>{item.list.quantity}</Text>
+            <TouchableOpacity onPress={() => handleQty(item.list.id, 1)} hitSlop={8} style={styles.stepBtn}>
+              <Ionicons name="add" size={13} color="#6B7280" />
+            </TouchableOpacity>
           </View>
-        )}
-        <Text style={styles.itemName}>{item.name}</Text>
-        <View style={styles.itemMeta}>
-          <Text style={styles.itemCategory}>{item.category}</Text>
-          {item.lastReportedAt && (
-            <>
-              <Text style={styles.dot}>·</Text>
-              <Ionicons name="time-outline" size={12} color="#9CA3AF" />
-              <Text style={styles.itemTime}>{formatTimeAgo(item.lastReportedAt)}</Text>
-            </>
+          {status ? (
+            <RowStatusDot status={status} />
+          ) : (
+            <View style={styles.noDataDot} />
           )}
+          <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10}>
+            <Ionicons name="close" size={15} color="#D1D5DB" />
+          </TouchableOpacity>
         </View>
-      </View>
-      <View style={styles.itemRight}>
-        {item.status ? (
-          <StatusBadge status={item.status} />
-        ) : item.onList ? (
-          <View style={styles.noDataBadge}>
-            <Text style={styles.noDataText}>No data</Text>
+      );
+    }
+
+    if (item.kind === 'store') {
+      return (
+        <View style={styles.storeRow}>
+          <TouchableOpacity
+            style={styles.storeRowMain}
+            onPress={() => router.push(`/report/${item.live.id}`)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowBody}>
+              <Text style={styles.rowName} numberOfLines={1}>{item.live.name}</Text>
+              <View style={styles.rowMeta}>
+                <Text style={styles.rowCat}>{item.live.category}</Text>
+                {item.live.lastReportedAt ? (
+                  <Text style={styles.rowTime}> · {formatTimeAgo(item.live.lastReportedAt)}</Text>
+                ) : null}
+              </View>
+            </View>
+            <StatusBadge status={item.live.status} />
+            <Ionicons name="chevron-forward" size={14} color="#D1D5DB" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleAddStoreItem(item.live)}
+            style={styles.storeAddBtn}
+            hitSlop={8}
+          >
+            <Ionicons name="add" size={18} color={PRIMARY} />
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // history
+    return (
+      <View style={[styles.row, styles.rowHistory]}>
+        <TouchableOpacity onPress={() => handleReAdd(item.list.id)} hitSlop={10}>
+          <View style={styles.checkDone}>
+            <Ionicons name="checkmark" size={12} color="#fff" />
           </View>
-        ) : null}
-        {canReport(item) ? (
-          <Ionicons name="chevron-forward" size={16} color="#D1D5DB" style={styles.chevron} />
-        ) : null}
+        </TouchableOpacity>
+        <Text style={styles.rowNameDone} numberOfLines={1}>{item.list.name}</Text>
+        {item.list.quantity > 1 && (
+          <Text style={styles.historyQty}>×{item.list.quantity}</Text>
+        )}
+        <TouchableOpacity onPress={() => handleReAdd(item.list.id)} style={styles.reAddBtn} hitSlop={8}>
+          <Ionicons name="refresh-outline" size={13} color={PRIMARY} />
+          <Text style={styles.reAddText}>Re-add</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Store header */}
       <TouchableOpacity style={styles.header} onPress={() => setPickerVisible(true)} activeOpacity={0.75}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerLabel}>Checking inventory at</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerLabel}>Shopping at</Text>
           <View style={styles.storeNameRow}>
             <Text style={styles.storeName} numberOfLines={1}>
-              {storeName || '…'}
+              {selectedStore?.name ?? 'Select a store…'}
             </Text>
-            <Ionicons name="chevron-down" size={16} color="#9CA3AF" style={{ marginTop: 2 }} />
+            <Ionicons name="chevron-down" size={15} color="#9CA3AF" style={{ marginTop: 1 }} />
           </View>
+          {selectedStore?.address ? (
+            <Text style={styles.storeAddress} numberOfLines={1}>{selectedStore.address}</Text>
+          ) : null}
         </View>
-        <View style={styles.headerBadge}>
-          <View style={[styles.liveDot, loading && styles.liveDotLoading]} />
-          <Text style={styles.headerBadgeText}>{loading ? 'Syncing' : 'Live'}</Text>
-        </View>
+        {totalQty > 0 && (
+          <View style={styles.countBadge}>
+            <Text style={styles.countBadgeText}>{totalQty}</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       <StorePicker
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
-        onSelect={(name, supabaseId) => {
-          setSelectedStore({ name, supabaseId });
+        onSelect={() => {
+          const saved = getSavedStore();
+          if (saved) setSelectedStore(saved);
         }}
+      />
+
+      <AddSheet
+        visible={addSheetVisible}
+        suggestions={suggestions}
+        activeItems={activeItems}
+        statusByName={statusByName}
+        loading={storeItemsLoading}
+        onAdd={handleAdd}
+        onChangeQty={handleQtyByName}
+        onClose={() => setAddSheetVisible(false)}
       />
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={18} color="#9CA3AF" style={styles.searchIcon} />
+        <Ionicons name="search" size={16} color="#9CA3AF" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search items…"
@@ -270,384 +532,196 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Stats row */}
-      {!loading && !error && items.length > 0 && (
-        <View style={styles.statsRow}>
-          <StatChip color="#1D9E75" label="In Stock"  count={inStock} />
-          <StatChip color="#E53935" label="Out"        count={outOfStock} />
-          <StatChip color="#F59E0B" label="Uncertain"  count={uncertain} />
-        </View>
-      )}
-
-      {/* List / Loading / Error */}
-      {loading ? (
+      {/* Empty / loading states */}
+      {noStore ? (
+        <TouchableOpacity style={styles.centered} onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
+          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>No store selected</Text>
+          <Text style={styles.emptySub}>Tap to find nearby grocery stores.</Text>
+          <View style={styles.findBtn}>
+            <Ionicons name="location-outline" size={15} color={PRIMARY} />
+            <Text style={styles.findBtnText}>Find stores near me</Text>
+          </View>
+        </TouchableOpacity>
+      ) : storeItemsLoading && listItems.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={PRIMARY} />
-          <Text style={styles.loadingText}>Loading inventory…</Text>
         </View>
-      ) : noStoreSelected ? (
-        <TouchableOpacity style={styles.centered} onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
-          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
-          <Text style={styles.emptyStoreTitle}>No store selected</Text>
-          <Text style={styles.emptyStoreSub}>Tap to find nearby grocery stores.</Text>
-          <View style={styles.changeStoreBtn}>
-            <Ionicons name="location-outline" size={15} color={PRIMARY} />
-            <Text style={styles.changeStoreBtnText}>Find stores near me</Text>
-          </View>
-        </TouchableOpacity>
-      ) : error ? (
-        <TouchableOpacity style={styles.centered} onPress={load} activeOpacity={0.7}>
-          <Ionicons name="cloud-offline-outline" size={42} color="#D1D5DB" />
-          <Text style={styles.errorText}>{error}</Text>
-          <View style={styles.retryBtn}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </View>
-        </TouchableOpacity>
-      ) : noItemsYet ? (
-        <TouchableOpacity style={styles.centered} onPress={() => setPickerVisible(true)} activeOpacity={0.8}>
-          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
-          <Text style={styles.emptyStoreTitle}>No items tracked yet</Text>
-          <Text style={styles.emptyStoreSub}>
-            Be the first to report stock at {activeStoreName}.
-          </Text>
-          <View style={styles.changeStoreBtn}>
-            <Ionicons name="location-outline" size={15} color={PRIMARY} />
-            <Text style={styles.changeStoreBtnText}>Choose a different store</Text>
-          </View>
-        </TouchableOpacity>
-      ) : searchEmpty ? (
-        <View style={styles.empty}>
+      ) : isEmpty && search.length > 0 ? (
+        <View style={styles.centered}>
           <Ionicons name="search-outline" size={40} color="#D1D5DB" />
-          <Text style={styles.emptyText}>No items match "{search}"</Text>
+          <Text style={styles.emptySub}>No items match "{search}"</Text>
+        </View>
+      ) : isEmpty ? (
+        <View style={styles.centered}>
+          <Ionicons name="cart-outline" size={56} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>Your list is empty</Text>
+          <Text style={styles.emptySub}>Tap "Add Items" to browse and add groceries.</Text>
         </View>
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id || item.name}
-          renderItem={renderItem}
-          renderSectionHeader={({ section }) =>
-            section.title ? (
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-              </View>
-            ) : null
-          }
+          keyExtractor={(item) => {
+            if (item.kind === 'active')  return 'a-' + item.list.id;
+            if (item.kind === 'store')   return 's-' + item.live.id;
+            return 'h-' + item.list.id;
+          }}
+          renderItem={renderRow}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              {section.key === 'history' && (
+                <TouchableOpacity onPress={handleClearHistory} hitSlop={8}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
           stickySectionHeadersEnabled={false}
+          ListFooterComponent={<View style={{ height: 90 }} />}
         />
+      )}
+
+      {/* Add Items bar */}
+      {!noStore && (
+        <View style={styles.addBar}>
+          <TouchableOpacity
+            style={styles.addBarBtn}
+            onPress={() => setAddSheetVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add-circle" size={20} color="#fff" />
+            <Text style={styles.addBarText}>Add Items</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </SafeAreaView>
   );
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: StockStatus }) {
   const color = STATUS_COLORS[status];
   const label = STATUS_LABELS[status];
   return (
-    <View style={[styles.badge, { backgroundColor: color + '18', borderColor: color + '40' }]}>
-      <View style={[styles.badgeDot, { backgroundColor: color }]} />
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    <View style={[badge.wrap, { backgroundColor: color + '18', borderColor: color + '40' }]}>
+      <View style={[badge.dot, { backgroundColor: color }]} />
+      <Text style={[badge.text, { color }]}>{label}</Text>
     </View>
   );
 }
 
-function StatChip({ color, label, count }: { color: string; label: string; count: number }) {
+function RowStatusDot({ status }: { status: StockStatus }) {
+  const color = STATUS_COLORS[status];
   return (
-    <View style={styles.statChip}>
-      <View style={[styles.statDot, { backgroundColor: color }]} />
-      <Text style={styles.statCount}>{count}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={[dot.wrap, { borderColor: color + '60', backgroundColor: color + '18' }]}>
+      <View style={[dot.circle, { backgroundColor: color }]} />
     </View>
   );
 }
 
+function SheetStatusDot({ status }: { status: StockStatus }) {
+  const color = STATUS_COLORS[status];
+  return (
+    <View style={[dot.wrap, { borderColor: color + '60', backgroundColor: color + '18' }]}>
+      <View style={[dot.circle, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  headerLeft: {
-    flex: 1,
-    marginRight: 12,
-  },
-  headerLabel: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  storeNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  storeName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  headerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 5,
-    marginTop: 2,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: PRIMARY,
-  },
-  liveDotLoading: {
-    backgroundColor: '#F59E0B',
-  },
-  headerBadgeText: {
-    fontSize: 12,
-    color: '#1D9E75',
-    fontWeight: '700',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    height: 44,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 5,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  statDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  statCount: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  list: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  sectionHeader: {
-    paddingTop: 8,
-    paddingBottom: 4,
-    paddingHorizontal: 2,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#9CA3AF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  itemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    justifyContent: 'space-between',
-  },
-  itemCardOnList: {
-    borderLeftWidth: 3,
-    borderLeftColor: PRIMARY,
-    paddingLeft: 11,
-  },
-  onListRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginBottom: 2,
-  },
-  onListLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: PRIMARY,
-  },
-  itemLeft: {
-    flex: 1,
-    marginRight: 12,
-  },
-  itemName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  itemMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  itemCategory: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  dot: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  itemTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginLeft: 1,
-  },
-  itemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    gap: 4,
-  },
-  badgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  noDataBadge: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  noDataText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9CA3AF',
-  },
-  chevron: {
-    marginLeft: 2,
-  },
-  separator: {
-    height: 8,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    paddingBottom: 60,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  retryBtn: {
-    backgroundColor: PRIMARY,
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  retryBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingTop: 60,
-    gap: 10,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  emptyStoreTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  emptyStoreSub: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-    lineHeight: 20,
-  },
-  changeStoreBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-    backgroundColor: '#ECFDF5',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  changeStoreBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PRIMARY,
-  },
+  container:       { flex: 1, backgroundColor: '#F9FAFB' },
+  header:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  headerLabel:     { fontSize: 11, color: '#9CA3AF', fontWeight: '500', marginBottom: 1 },
+  storeNameRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  storeName:       { fontSize: 17, fontWeight: '700', color: '#111827', flexShrink: 1 },
+  storeAddress:    { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
+  countBadge:      { marginLeft: 10, backgroundColor: PRIMARY, borderRadius: 12, minWidth: 26, height: 26, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  countBadgeText:  { color: '#fff', fontSize: 13, fontWeight: '800' },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 16, marginVertical: 10, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E7EB', height: 40 },
+  searchIcon:      { marginRight: 8 },
+  searchInput:     { flex: 1, fontSize: 14, color: '#111827' },
+  list:            { paddingHorizontal: 16, paddingTop: 4 },
+  sectionHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 2 },
+  sectionTitle:    { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6 },
+  clearText:       { fontSize: 12, color: '#EF4444', fontWeight: '600' },
+  sep:             { height: 1, backgroundColor: '#F3F4F6', marginLeft: 44 },
+  // Active row
+  row:             { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },
+  rowHistory:      { opacity: 0.65 },
+  rowBody:         { flex: 1, gap: 2, minWidth: 0 },
+  rowName:         { fontSize: 14, fontWeight: '600', color: '#111827' },
+  rowNameDone:     { flex: 1, fontSize: 14, color: '#9CA3AF', textDecorationLine: 'line-through' },
+  rowMeta:         { flexDirection: 'row', alignItems: 'center' },
+  rowCat:          { fontSize: 11, color: '#B0B7C3' },
+  rowTime:         { fontSize: 11, color: '#B0B7C3' },
+  checkEmpty:      { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
+  checkDone:       { width: 22, height: 22, borderRadius: 11, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  stepper:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, overflow: 'hidden' },
+  stepBtn:         { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+  stepBtnDim:      { opacity: 0.35 },
+  stepQty:         { fontSize: 13, fontWeight: '700', color: '#111827', minWidth: 20, textAlign: 'center' },
+  noDataDot:       { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  historyQty:      { fontSize: 12, fontWeight: '700', color: '#9CA3AF' },
+  reAddBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
+  reAddText:       { fontSize: 11, fontWeight: '700', color: PRIMARY },
+  // Store row
+  storeRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' },
+  storeRowMain:    { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingLeft: 12, paddingRight: 8, gap: 8 },
+  storeAddBtn:     { width: 44, height: '100%' as any, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: '#F3F4F6' },
+  // Add bar
+  addBar:          { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12, backgroundColor: 'transparent' },
+  addBarBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
+  addBarText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
+  // Empty / loading
+  centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
+  emptyTitle:      { fontSize: 18, fontWeight: '700', color: '#111827' },
+  emptySub:        { fontSize: 14, color: '#6B7280', textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
+  findBtn:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, backgroundColor: '#ECFDF5', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: '#A7F3D0' },
+  findBtnText:     { fontSize: 13, fontWeight: '600', color: PRIMARY },
+});
+
+const badge = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, gap: 4 },
+  dot:  { width: 6, height: 6, borderRadius: 3 },
+  text: { fontSize: 11, fontWeight: '700' },
+});
+
+const dot = StyleSheet.create({
+  wrap:   { width: 22, height: 22, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  circle: { width: 8, height: 8, borderRadius: 4 },
+});
+
+const sheet = StyleSheet.create({
+  container:   { flex: 1, backgroundColor: '#F9FAFB' },
+  header:      { backgroundColor: '#fff', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  handle:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 14 },
+  titleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  title:       { fontSize: 18, fontWeight: '700', color: '#111827' },
+  doneBtn:     { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#ECFDF5', borderRadius: 10 },
+  doneBtnText: { fontSize: 14, fontWeight: '700', color: PRIMARY },
+  searchRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: '#111827' },
+  list:        { paddingHorizontal: 16, paddingVertical: 8 },
+  sep:         { height: 1, backgroundColor: '#F3F4F6', marginLeft: 8 },
+  row:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 11, paddingHorizontal: 12, gap: 10 },
+  rowInList:   { backgroundColor: '#F0FDF8' },
+  rowLeft:     { flex: 1, gap: 2, minWidth: 0 },
+  rowName:     { fontSize: 15, fontWeight: '600', color: '#111827' },
+  rowCategory: { fontSize: 11, color: '#9CA3AF' },
+  rowRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepper:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, overflow: 'hidden' },
+  stepBtn:     { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  stepBtnDim:  { opacity: 0.35 },
+  stepQty:     { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 28, textAlign: 'center' },
+  addBtn:      { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  customRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
+  customIcon:  { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
+  customLabel: { fontSize: 15, fontWeight: '700', color: PRIMARY },
+  customSub:   { fontSize: 11, color: '#6B7280' },
+  centered:    { paddingVertical: 40, alignItems: 'center' },
+  emptyText:   { fontSize: 14, color: '#9CA3AF' },
 });
