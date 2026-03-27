@@ -17,10 +17,10 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StockStatus, STATUS_COLORS, STATUS_LABELS, formatTimeAgo } from '../../data';
-import { fetchItems, upsertItem, DEFAULT_STORE_ID } from '../../lib/api';
+import { fetchItems, upsertItem, upsertStore, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
-import { getSavedStore, matchChain, type SelectedStore } from '../../lib/stores';
+import { getSavedStore, matchChain, saveStore, type SelectedStore } from '../../lib/stores';
 import { getSampleItems } from '../../lib/sampleItems';
 import {
   getList,
@@ -222,6 +222,8 @@ export default function ShopScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [addSheetVisible, setAddSheetVisible] = useState(false);
   const [search, setSearch] = useState('');
+  // ID of the list item currently being upserted before navigation (shows a spinner)
+  const [reportingListId, setReportingListId] = useState<string | null>(null);
 
   const sk = storeKey(selectedStore);
   const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
@@ -329,14 +331,38 @@ export default function ShopScreen() {
     [activeItems]
   );
 
+  // Ensure the selected store exists in Supabase and return its ID.
+  // Auto-creates the store if it isn't tracked yet. Updates state in place.
+  async function ensureStoreId(): Promise<string | null> {
+    if (selectedStore?.supabaseId) return selectedStore.supabaseId;
+    if (!selectedStore?.name) return null;
+    try {
+      const sid = await upsertStore(selectedStore.name);
+      const updated: SelectedStore = {
+        name: selectedStore.name,
+        address: selectedStore.address,
+        osmId: selectedStore.osmId,
+        supabaseId: sid,
+      };
+      setSelectedStore(updated);
+      saveStore(updated);
+      return sid;
+    } catch {
+      return null;
+    }
+  }
+
   // Handlers
-  function handleAdd(name: string, category: string, itemId: string | null) {
+  async function handleAdd(name: string, category: string, itemId: string | null) {
     addItem(sk, { name, category: category || 'General', itemId });
     refresh();
-    if (!itemId && selectedStore?.supabaseId) {
-      upsertItem(selectedStore.supabaseId, name, category || 'General')
-        .then(() => fetchItems(selectedStore.supabaseId!).then(setStoreItems).catch(() => {}))
-        .catch(() => {});
+    if (!itemId) {
+      const sid = await ensureStoreId();
+      if (sid) {
+        upsertItem(sid, name, category || 'General')
+          .then(() => fetchItems(sid).then(setStoreItems).catch(() => {}))
+          .catch(() => {});
+      }
     }
   }
 
@@ -357,20 +383,37 @@ export default function ShopScreen() {
     ]);
   }
 
-  function handleReportActive(row: ActiveRow) {
+  async function handleReportActive(row: ActiveRow) {
+    // Fast path: item already linked to Supabase
     if (row.live) {
       router.push(`/report/${row.live.id}`);
-    } else {
+      return;
+    }
+
+    // Slow path: item exists in the grocery list but not yet in Supabase (just added,
+    // or store was untracked). Upsert store + item, then navigate with the real ID.
+    setReportingListId(row.list.id);
+    try {
+      const sid = await ensureStoreId();
+      if (!sid) {
+        // Store truly can't be created — navigate to /report/new which shows a clear message
+        router.push({
+          pathname: '/report/[id]',
+          params: { id: 'new', name: row.list.name, category: row.list.category, storeId: '', storeName: selectedStore?.name ?? '' },
+        });
+        return;
+      }
+      const itemId = await upsertItem(sid, row.list.name, row.list.category);
+      // Refresh store items in background so the status dot updates
+      fetchItems(sid).then(setStoreItems).catch(() => {});
+      router.push(`/report/${itemId}`);
+    } catch {
       router.push({
         pathname: '/report/[id]',
-        params: {
-          id: 'new',
-          name: row.list.name,
-          category: row.list.category,
-          storeId: selectedStore?.supabaseId ?? '',
-          storeName: selectedStore?.name ?? '',
-        },
+        params: { id: 'new', name: row.list.name, category: row.list.category, storeId: selectedStore?.supabaseId ?? '', storeName: selectedStore?.name ?? '' },
       });
+    } finally {
+      setReportingListId(null);
     }
   }
 
@@ -385,12 +428,13 @@ export default function ShopScreen() {
   const renderRow = ({ item }: { item: ShopRow }) => {
     if (item.kind === 'active') {
       const status = item.live?.status ?? null;
+      const isReporting = reportingListId === item.list.id;
       return (
         <View style={styles.row}>
-          <TouchableOpacity onPress={() => handleToggle(item.list.id)} hitSlop={10}>
+          <TouchableOpacity onPress={() => handleToggle(item.list.id)} hitSlop={10} disabled={isReporting}>
             <View style={styles.checkEmpty} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.rowBody} onPress={() => handleReportActive(item)} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.rowBody} onPress={() => handleReportActive(item)} activeOpacity={0.7} disabled={isReporting}>
             <Text style={styles.rowName} numberOfLines={1}>{item.list.name}</Text>
             <View style={styles.rowMeta}>
               <Text style={styles.rowCat}>{item.list.category}</Text>
@@ -404,21 +448,23 @@ export default function ShopScreen() {
               onPress={() => handleQty(item.list.id, -1)}
               hitSlop={8}
               style={[styles.stepBtn, item.list.quantity <= 1 && styles.stepBtnDim]}
-              disabled={item.list.quantity <= 1}
+              disabled={item.list.quantity <= 1 || isReporting}
             >
               <Ionicons name="remove" size={13} color={item.list.quantity <= 1 ? '#D1D5DB' : '#6B7280'} />
             </TouchableOpacity>
             <Text style={styles.stepQty}>{item.list.quantity}</Text>
-            <TouchableOpacity onPress={() => handleQty(item.list.id, 1)} hitSlop={8} style={styles.stepBtn}>
+            <TouchableOpacity onPress={() => handleQty(item.list.id, 1)} hitSlop={8} style={styles.stepBtn} disabled={isReporting}>
               <Ionicons name="add" size={13} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          {status ? (
+          {isReporting ? (
+            <ActivityIndicator size="small" color={PRIMARY} style={{ width: 22 }} />
+          ) : status ? (
             <RowStatusDot status={status} />
           ) : (
             <View style={styles.noDataDot} />
           )}
-          <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10}>
+          <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10} disabled={isReporting}>
             <Ionicons name="close" size={15} color="#D1D5DB" />
           </TouchableOpacity>
         </View>

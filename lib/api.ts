@@ -117,6 +117,31 @@ export async function upsertItem(
   return (data as { id: string }).id;
 }
 
+/**
+ * Find or create a store by name. Used when an OSM-selected store has no
+ * Supabase record yet. Returns the store's id.
+ */
+export async function upsertStore(name: string): Promise<string> {
+  // Try to find by first keyword (matches "Ralphs", "Vons", etc.)
+  const keyword = name.split(/\s+/)[0];
+  const { data: existing } = await supabase
+    .from('stores')
+    .select('id')
+    .ilike('name', `%${keyword}%`)
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.id as string;
+
+  // Create a new store entry
+  const { data, error } = await supabase
+    .from('stores')
+    .insert({ name })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
 export interface Profile {
   id: string;
   points: number;
