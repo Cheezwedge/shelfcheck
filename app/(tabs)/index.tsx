@@ -547,8 +547,15 @@ export default function ShopScreen() {
           ) : status ? (
             <RowStatusDot status={status} />
           ) : (
-            // No Supabase record yet — cloud icon prompts the user to tap to sync
-            <Ionicons name="cloud-upload-outline" size={18} color="#D1D5DB" style={{ width: 22, textAlign: 'center' }} />
+            // No Supabase record yet — tapping syncs the item and opens reporting
+            <TouchableOpacity
+              onPress={() => handleReportActive(item)}
+              hitSlop={8}
+              style={styles.syncBtn}
+            >
+              <Ionicons name="cloud-upload-outline" size={13} color="#9CA3AF" />
+              <Text style={styles.syncBtnText}>Sync</Text>
+            </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10} disabled={isReporting}>
             <Ionicons name="close" size={15} color="#D1D5DB" />
@@ -797,6 +804,8 @@ const styles = StyleSheet.create({
   stepBtnDim:      { opacity: 0.35 },
   stepQty:         { fontSize: 13, fontWeight: '700', color: '#111827', minWidth: 20, textAlign: 'center' },
   historyQty:      { fontSize: 12, fontWeight: '700', color: '#9CA3AF' },
+  syncBtn:         { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  syncBtnText:     { fontSize: 10, fontWeight: '600', color: '#9CA3AF' },
   reAddBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
   reAddText:       { fontSize: 11, fontWeight: '700', color: PRIMARY },
   // Store row
