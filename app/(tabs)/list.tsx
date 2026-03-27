@@ -15,7 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchItems, DEFAULT_STORE_ID } from '../../lib/api';
+import { fetchItems, upsertItem, DEFAULT_STORE_ID } from '../../lib/api';
 import { getSavedStore, matchChain, type SelectedStore } from '../../lib/stores';
 import { getSampleItems } from '../../lib/sampleItems';
 import {
@@ -295,6 +295,17 @@ export default function ListScreen() {
   function handleAdd(name: string, category: string, itemId: string | null) {
     addItem(key, { name, category: category || 'General', itemId });
     refresh();
+    // If this store is tracked in Supabase and the item has no existing ID,
+    // upsert it so users can report stock status from the home tab.
+    if (!itemId && selectedStore?.supabaseId) {
+      upsertItem(selectedStore.supabaseId, name, category || 'General')
+        .then(() => {
+          fetchItems(selectedStore.supabaseId!)
+            .then(setStoreItems)
+            .catch(() => {});
+        })
+        .catch(() => {});
+    }
   }
 
   // Used by AddSheet to change qty by name (item id resolved here)
