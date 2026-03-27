@@ -33,6 +33,7 @@ import {
   type GroceryListItem,
 } from '../../lib/groceryList';
 import StorePicker from '../../components/StorePicker';
+import { useAuth } from '../../lib/auth';
 
 const PRIMARY = '#1D9E75';
 
@@ -291,6 +292,7 @@ function AddSheet({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ShopScreen() {
   const router = useRouter();
+  const { isGuest } = useAuth();
 
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
@@ -301,6 +303,8 @@ export default function ShopScreen() {
   const [search, setSearch] = useState('');
   // ID of the list item currently being upserted before navigation (shows a spinner)
   const [reportingListId, setReportingListId] = useState<string | null>(null);
+  // Show a nudge banner when a guest tries to add a custom item (needs account to sync)
+  const [showSignInNudge, setShowSignInNudge] = useState(false);
 
   const sk = storeKey(selectedStore);
   const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
@@ -433,6 +437,12 @@ export default function ShopScreen() {
 
     // If the item already has a Supabase ID (picked from store suggestions) we're done
     if (itemId) return;
+
+    // Guest users can't write to Supabase — show a sign-in nudge and stop here
+    if (isGuest) {
+      setShowSignInNudge(true);
+      return;
+    }
 
     // Custom item: upsert store + item in Supabase so stock status can be reported
     try {
@@ -723,6 +733,22 @@ export default function ShopScreen() {
         />
       )}
 
+      {/* Sign-in nudge banner (shown after guest tries to add a custom item) */}
+      {showSignInNudge && (
+        <View style={styles.nudgeBanner}>
+          <Ionicons name="person-circle-outline" size={18} color="#92400E" />
+          <Text style={styles.nudgeText}>
+            Create a free account to sync custom items &amp; report stock.
+          </Text>
+          <TouchableOpacity onPress={() => { setShowSignInNudge(false); router.push('/auth'); }} style={styles.nudgeBtn}>
+            <Text style={styles.nudgeBtnText}>Sign up</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowSignInNudge(false)} hitSlop={8}>
+            <Ionicons name="close" size={16} color="#92400E" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Add Items bar */}
       {!noStore && (
         <View style={styles.addBar}>
@@ -816,6 +842,11 @@ const styles = StyleSheet.create({
   addBar:          { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12, backgroundColor: 'transparent' },
   addBarBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
   addBarText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
+  // Sign-in nudge banner
+  nudgeBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFBEB', borderTopWidth: 1, borderTopColor: '#FDE68A', paddingHorizontal: 14, paddingVertical: 10 },
+  nudgeText:       { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 16 },
+  nudgeBtn:        { backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  nudgeBtnText:    { fontSize: 12, fontWeight: '700', color: '#fff' },
   // Empty / loading
   centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
   emptyTitle:      { fontSize: 18, fontWeight: '700', color: '#111827' },

@@ -31,6 +31,7 @@ export default function ReportScreen() {
   const [selected, setSelected] = useState<'in-stock' | 'out-of-stock' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [alreadyReported, setAlreadyReported] = useState(false);
 
   useEffect(() => {
     if (id === 'new' && paramName) {
@@ -61,12 +62,20 @@ export default function ReportScreen() {
       await submitReport(item.id, selected, getReportingUserId(session));
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
-    } catch {
-      Alert.alert(
-        'Submission failed',
-        'Please check your connection and try again.',
-        [{ text: 'OK' }]
-      );
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === '23505') {
+        // Unique index violation: reports_one_per_day — already reported today
+        setAlreadyReported(true);
+        setSubmitted(true);
+        setTimeout(() => router.back(), 1600);
+      } else {
+        Alert.alert(
+          'Submission failed',
+          'Please check your connection and try again.',
+          [{ text: 'OK' }]
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -124,8 +133,14 @@ export default function ReportScreen() {
           <View style={styles.successIcon}>
             <Ionicons name="checkmark" size={36} color="#fff" />
           </View>
-          <Text style={styles.successTitle}>Thanks for reporting!</Text>
-          <Text style={styles.successSub}>+{POINTS_PER_REPORT} pts added to your account</Text>
+          <Text style={styles.successTitle}>
+            {alreadyReported ? 'Already reported today' : 'Thanks for reporting!'}
+          </Text>
+          <Text style={styles.successSub}>
+            {alreadyReported
+              ? 'You\'ve already reported this item today.'
+              : `+${POINTS_PER_REPORT} pts added to your account`}
+          </Text>
         </View>
       </SafeAreaView>
     );
