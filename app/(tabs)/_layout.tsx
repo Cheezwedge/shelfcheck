@@ -1,14 +1,34 @@
 import { Tabs, useRouter } from 'expo-router';
 import { TouchableOpacity, Alert, Platform } from 'react-native';
+import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
 
 const PRIMARY = '#1D9E75';
 const INACTIVE = '#9CA3AF';
 
+function useWebSafeAreaBottom(): number {
+  const [bottom, setBottom] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    // Probe the actual computed pixel value of env(safe-area-inset-bottom)
+    // by measuring a fixed-position element whose height equals the env() value.
+    const probe = document.createElement('div');
+    probe.style.cssText =
+      'position:fixed;bottom:0;left:0;width:1px;' +
+      'height:env(safe-area-inset-bottom,0px);pointer-events:none;visibility:hidden';
+    document.body.appendChild(probe);
+    const h = probe.getBoundingClientRect().height || 0;
+    document.body.removeChild(probe);
+    setBottom(h);
+  }, []);
+  return bottom;
+}
+
 export default function TabLayout() {
   const router = useRouter();
   const { isGuest, signOut } = useAuth();
+  const safeBottom = useWebSafeAreaBottom();
 
   const handleAccountPress = () => {
     if (isGuest) {
@@ -34,12 +54,8 @@ export default function TabLayout() {
           backgroundColor: '#fff',
           borderTopColor: '#E5E7EB',
           borderTopWidth: 1,
-          height: Platform.OS === 'web'
-            ? ('calc(60px + env(safe-area-inset-bottom))' as any)
-            : 60,
-          paddingBottom: Platform.OS === 'web'
-            ? ('calc(8px + env(safe-area-inset-bottom))' as any)
-            : 8,
+          height: 60 + safeBottom,
+          paddingBottom: 8 + safeBottom,
           paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
