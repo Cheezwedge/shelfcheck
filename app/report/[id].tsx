@@ -20,19 +20,26 @@ const POINTS_PER_REPORT = 10;
 const PHOTO_BONUS = 15;
 
 export default function ReportScreen() {
-  const { id, name: paramName, category: paramCategory, storeId: paramStoreId } =
-    useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string }>();
+  const { id, name: paramName, category: paramCategory, storeId: paramStoreId, storeName: paramStoreName } =
+    useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string; storeName?: string }>();
   const router = useRouter();
   const { session } = useAuth();
 
   const [item, setItem] = useState<LiveItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notTracked, setNotTracked] = useState(false);
   const [selected, setSelected] = useState<'in-stock' | 'out-of-stock' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    if (id === 'new' && paramName && paramStoreId) {
+    if (id === 'new' && paramName) {
+      if (!paramStoreId) {
+        // Store not in our database — show informative screen
+        setNotTracked(true);
+        setLoading(false);
+        return;
+      }
       // Item doesn't exist in Supabase yet — upsert it, then load
       upsertItem(paramStoreId, paramName, paramCategory ?? 'General')
         .then((newId) => fetchItem(newId))
@@ -71,6 +78,27 @@ export default function ReportScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={PRIMARY} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Store not tracked ────────────────────────────────────────────────────
+  if (notTracked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Ionicons name="storefront-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.notTrackedTitle}>Store not in database</Text>
+          <Text style={styles.notTrackedSub}>
+            {paramStoreName
+              ? `${paramStoreName} isn't in our database yet.`
+              : 'This store isn\'t in our database yet.'}
+            {'\n'}Reports can only be submitted for stores we track.
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -223,8 +251,12 @@ export default function ReportScreen() {
 const styles = StyleSheet.create({
   container:        { flex: 1, backgroundColor: '#F9FAFB' },
   scroll:           { padding: 16, paddingBottom: 40 },
-  centered:         { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  centered:         { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   errorText:        { fontSize: 15, color: '#6B7280' },
+  notTrackedTitle:  { fontSize: 17, fontWeight: '700', color: '#111827', textAlign: 'center' },
+  notTrackedSub:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+  backBtn:          { backgroundColor: PRIMARY, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12, marginTop: 8 },
+  backBtnText:      { color: '#fff', fontWeight: '700', fontSize: 15 },
   itemHeader: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
     borderRadius: 14, padding: 16, marginBottom: 20, gap: 14,

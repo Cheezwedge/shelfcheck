@@ -1,7 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
-import { TouchableOpacity, Alert } from 'react-native';
+import { TouchableOpacity, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../lib/auth';
 
 const PRIMARY = '#1D9E75';
@@ -10,7 +9,6 @@ const INACTIVE = '#9CA3AF';
 export default function TabLayout() {
   const router = useRouter();
   const { isGuest, signOut } = useAuth();
-  const insets = useSafeAreaInsets();
 
   const handleAccountPress = () => {
     if (isGuest) {
@@ -36,8 +34,12 @@ export default function TabLayout() {
           backgroundColor: '#fff',
           borderTopColor: '#E5E7EB',
           borderTopWidth: 1,
-          height: 60 + insets.bottom,
-          paddingBottom: 8 + insets.bottom,
+          height: Platform.OS === 'web'
+            ? ('calc(60px + env(safe-area-inset-bottom))' as any)
+            : 60,
+          paddingBottom: Platform.OS === 'web'
+            ? ('calc(8px + env(safe-area-inset-bottom))' as any)
+            : 8,
           paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },

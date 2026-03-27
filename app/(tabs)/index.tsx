@@ -8,7 +8,6 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -172,21 +171,14 @@ export default function HomeScreen() {
     if (item.id) {
       router.push(`/report/${item.id}`);
     } else if (item.onList) {
-      if (!selectedStore?.supabaseId) {
-        Alert.alert(
-          'Store not in database',
-          `${selectedStore?.name ?? 'This store'} isn't in our database yet. Reports can only be submitted for stores we track.`,
-          [{ text: 'OK' }]
-        );
-        return;
-      }
       router.push({
         pathname: '/report/[id]',
         params: {
           id: 'new',
           name: item.name,
           category: item.category,
-          storeId: selectedStore.supabaseId,
+          storeId: selectedStore?.supabaseId ?? '',
+          storeName: selectedStore?.name ?? '',
         },
       });
     }
