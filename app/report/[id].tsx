@@ -139,7 +139,7 @@ export default function ReportScreen() {
         {/* Item header */}
         <View style={styles.itemHeader}>
           <View style={styles.itemIconBox}>
-            <Ionicons name="basket-outline" size={28} color={PRIMARY} />
+            <Ionicons name="basket-outline" size={22} color={PRIMARY} />
           </View>
           <View style={styles.itemHeaderText}>
             <Text style={styles.itemName}>{item.name}</Text>
@@ -158,15 +158,17 @@ export default function ReportScreen() {
           >
             <Ionicons
               name="checkmark-circle"
-              size={32}
+              size={24}
               color={selected === 'in-stock' ? '#fff' : PRIMARY}
             />
-            <Text style={[styles.stockBtnLabel, selected === 'in-stock' ? styles.labelActive : { color: PRIMARY }]}>
-              In Stock
-            </Text>
-            <Text style={[styles.stockBtnSub, selected === 'in-stock' ? styles.subActive : { color: '#6B7280' }]}>
-              Found on shelf
-            </Text>
+            <View>
+              <Text style={[styles.stockBtnLabel, selected === 'in-stock' ? styles.labelActive : { color: PRIMARY }]}>
+                In Stock
+              </Text>
+              <Text style={[styles.stockBtnSub, selected === 'in-stock' ? styles.subActive : { color: '#6B7280' }]}>
+                Found on shelf
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -176,26 +178,26 @@ export default function ReportScreen() {
           >
             <Ionicons
               name="close-circle"
-              size={32}
+              size={24}
               color={selected === 'out-of-stock' ? '#fff' : '#E53935'}
             />
-            <Text style={[styles.stockBtnLabel, selected === 'out-of-stock' ? styles.labelActive : { color: '#E53935' }]}>
-              Out of Stock
-            </Text>
-            <Text style={[styles.stockBtnSub, selected === 'out-of-stock' ? styles.subActive : { color: '#6B7280' }]}>
-              Shelf is empty
-            </Text>
+            <View>
+              <Text style={[styles.stockBtnLabel, selected === 'out-of-stock' ? styles.labelActive : { color: '#E53935' }]}>
+                Out of Stock
+              </Text>
+              <Text style={[styles.stockBtnSub, selected === 'out-of-stock' ? styles.subActive : { color: '#6B7280' }]}>
+                Shelf is empty
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionLabel}>ADD EVIDENCE (OPTIONAL)</Text>
 
-        {/* Camera placeholders */}
+        {/* Camera placeholders — compact horizontal layout */}
         <View style={styles.evidenceRow}>
           <TouchableOpacity style={styles.evidenceBtn} activeOpacity={0.7}>
-            <View style={styles.evidenceIcon}>
-              <Ionicons name="camera-outline" size={22} color={PRIMARY} />
-            </View>
+            <Ionicons name="camera-outline" size={18} color={PRIMARY} />
             <Text style={styles.evidenceBtnLabel}>Shelf Photo</Text>
             <View style={styles.bonusBadge}>
               <Text style={styles.bonusBadgeText}>+{PHOTO_BONUS} pts</Text>
@@ -203,9 +205,7 @@ export default function ReportScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.evidenceBtn} activeOpacity={0.7}>
-            <View style={styles.evidenceIcon}>
-              <Ionicons name="receipt-outline" size={22} color={PRIMARY} />
-            </View>
+            <Ionicons name="receipt-outline" size={18} color={PRIMARY} />
             <Text style={styles.evidenceBtnLabel}>Receipt Scan</Text>
             <View style={styles.bonusBadge}>
               <Text style={styles.bonusBadgeText}>+{PHOTO_BONUS} pts</Text>
@@ -215,11 +215,9 @@ export default function ReportScreen() {
 
         {/* Points note */}
         <View style={styles.pointsNote}>
-          <Ionicons name="star" size={14} color="#F59E0B" />
+          <Ionicons name="star" size={13} color="#F59E0B" />
           <Text style={styles.pointsNoteText}>
-            This submission earns{' '}
-            <Text style={styles.pointsBold}>{POINTS_PER_REPORT} points</Text>
-            {' '}toward your next reward
+            Earns <Text style={styles.pointsBold}>{POINTS_PER_REPORT} points</Text> toward your next reward
           </Text>
         </View>
 
@@ -250,7 +248,7 @@ export default function ReportScreen() {
 
 const styles = StyleSheet.create({
   container:        { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll:           { padding: 16, paddingBottom: 40 },
+  scroll:           { padding: 16, paddingBottom: 24 },
   centered:         { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   errorText:        { fontSize: 15, color: '#6B7280' },
   notTrackedTitle:  { fontSize: 17, fontWeight: '700', color: '#111827', textAlign: 'center' },
@@ -259,49 +257,45 @@ const styles = StyleSheet.create({
   backBtnText:      { color: '#fff', fontWeight: '700', fontSize: 15 },
   itemHeader: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-    borderRadius: 14, padding: 16, marginBottom: 20, gap: 14,
+    borderRadius: 12, padding: 12, marginBottom: 14, gap: 12,
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   itemIconBox: {
-    width: 52, height: 52, borderRadius: 14, backgroundColor: '#ECFDF5',
+    width: 40, height: 40, borderRadius: 10, backgroundColor: '#ECFDF5',
     alignItems: 'center', justifyContent: 'center',
   },
   itemHeaderText:   { flex: 1 },
-  itemName:         { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 3 },
-  itemCategory:     { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
-  sectionLabel:     { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, marginBottom: 10, marginTop: 4 },
-  stockButtons:     { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  stockBtn:         { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 16, paddingVertical: 20, paddingHorizontal: 12, gap: 6, borderWidth: 2 },
+  itemName:         { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 2 },
+  itemCategory:     { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
+  sectionLabel:     { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, marginBottom: 8, marginTop: 2 },
+  stockButtons:     { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  stockBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, gap: 10, borderWidth: 2 },
   stockBtnIn:       { backgroundColor: '#ECFDF5', borderColor: '#1D9E75' },
   stockBtnInActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
   stockBtnOut:      { backgroundColor: '#FEF2F2', borderColor: '#E53935' },
   stockBtnOutActive:{ backgroundColor: '#E53935', borderColor: '#E53935' },
-  stockBtnLabel:    { fontSize: 16, fontWeight: '700' },
+  stockBtnLabel:    { fontSize: 14, fontWeight: '700' },
   labelActive:      { color: '#fff' },
-  stockBtnSub:      { fontSize: 12 },
+  stockBtnSub:      { fontSize: 11, marginTop: 1 },
   subActive:        { color: 'rgba(255,255,255,0.8)' },
-  evidenceRow:      { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  evidenceRow:      { flexDirection: 'row', gap: 10, marginBottom: 12 },
   evidenceBtn: {
-    flex: 1, alignItems: 'center', backgroundColor: '#fff', borderRadius: 14,
-    paddingVertical: 16, paddingHorizontal: 10, borderWidth: 1.5,
-    borderStyle: 'dashed', borderColor: '#D1D5DB', gap: 6,
+    flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1.5,
+    borderStyle: 'dashed', borderColor: '#D1D5DB', gap: 8,
   },
-  evidenceIcon: {
-    width: 42, height: 42, borderRadius: 12, backgroundColor: '#ECFDF5',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  evidenceBtnLabel: { fontSize: 13, fontWeight: '600', color: '#374151' },
-  bonusBadge:       { backgroundColor: '#FEF3C7', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
-  bonusBadgeText:   { fontSize: 11, fontWeight: '700', color: '#92400E' },
+  evidenceBtnLabel: { flex: 1, fontSize: 12, fontWeight: '600', color: '#374151' },
+  bonusBadge:       { backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  bonusBadgeText:   { fontSize: 10, fontWeight: '700', color: '#92400E' },
   pointsNote: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FFFBEB', borderRadius: 10, padding: 12,
-    marginBottom: 20, borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
+    marginBottom: 14, borderWidth: 1, borderColor: '#FDE68A',
   },
-  pointsNoteText:   { fontSize: 13, color: '#6B7280', flex: 1 },
+  pointsNoteText:   { fontSize: 12, color: '#6B7280', flex: 1 },
   pointsBold:       { fontWeight: '700', color: '#92400E' },
   submitBtn: {
-    backgroundColor: PRIMARY, borderRadius: 14, height: 54,
+    backgroundColor: PRIMARY, borderRadius: 12, height: 48,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
   submitBtnDisabled:{ backgroundColor: '#D1D5DB' },
