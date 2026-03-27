@@ -8,6 +8,7 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -164,14 +165,21 @@ export default function HomeScreen() {
   const noItemsYet = !loading && !error && !!activeStoreName && items.length === 0 && listItemsActive.length === 0;
   const searchEmpty = !loading && !error && !noItemsYet && search.length > 0 && sections.length === 0;
 
-  // Items with no Supabase ID but on the list can still be reported if we have a store ID
-  const canReport = (item: HomeItem) =>
-    !!item.id || (item.onList && !!selectedStore?.supabaseId);
+  // All items with an ID are reportable; grocery list items are always tappable
+  const canReport = (item: HomeItem) => !!item.id || item.onList;
 
   const handleItemPress = (item: HomeItem) => {
     if (item.id) {
       router.push(`/report/${item.id}`);
-    } else if (item.onList && selectedStore?.supabaseId) {
+    } else if (item.onList) {
+      if (!selectedStore?.supabaseId) {
+        Alert.alert(
+          'Store not in database',
+          `${selectedStore?.name ?? 'This store'} isn't in our database yet. Reports can only be submitted for stores we track.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       router.push({
         pathname: '/report/[id]',
         params: {
