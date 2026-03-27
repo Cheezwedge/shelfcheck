@@ -86,6 +86,37 @@ export async function submitReport(
   return (data as { id: string }).id;
 }
 
+/**
+ * Find or create an item for a store. Used when a grocery-list item has no
+ * Supabase record yet and the user wants to submit a first report.
+ * Returns the item's id.
+ */
+export async function upsertItem(
+  storeId: string,
+  name: string,
+  category: string
+): Promise<string> {
+  // Look for an existing item with the same name in this store (case-insensitive)
+  const { data: existing } = await supabase
+    .from('items')
+    .select('id')
+    .eq('store_id', storeId)
+    .ilike('name', name)
+    .maybeSingle();
+
+  if (existing?.id) return existing.id as string;
+
+  // Create new item
+  const { data, error } = await supabase
+    .from('items')
+    .insert({ store_id: storeId, name, category })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
 export interface Profile {
   id: string;
   points: number;

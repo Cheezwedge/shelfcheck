@@ -164,11 +164,31 @@ export default function HomeScreen() {
   const noItemsYet = !loading && !error && !!activeStoreName && items.length === 0 && listItemsActive.length === 0;
   const searchEmpty = !loading && !error && !noItemsYet && search.length > 0 && sections.length === 0;
 
+  // Items with no Supabase ID but on the list can still be reported if we have a store ID
+  const canReport = (item: HomeItem) =>
+    !!item.id || (item.onList && !!selectedStore?.supabaseId);
+
+  const handleItemPress = (item: HomeItem) => {
+    if (item.id) {
+      router.push(`/report/${item.id}`);
+    } else if (item.onList && selectedStore?.supabaseId) {
+      router.push({
+        pathname: '/report/[id]',
+        params: {
+          id: 'new',
+          name: item.name,
+          category: item.category,
+          storeId: selectedStore.supabaseId,
+        },
+      });
+    }
+  };
+
   const renderItem = ({ item }: { item: HomeItem }) => (
     <TouchableOpacity
       style={[styles.itemCard, item.onList && styles.itemCardOnList]}
-      onPress={() => { if (item.id) router.push(`/report/${item.id}`); }}
-      activeOpacity={item.id ? 0.7 : 1}
+      onPress={() => handleItemPress(item)}
+      activeOpacity={canReport(item) ? 0.7 : 1}
     >
       <View style={styles.itemLeft}>
         {item.onList && (
@@ -197,7 +217,7 @@ export default function HomeScreen() {
             <Text style={styles.noDataText}>No data</Text>
           </View>
         ) : null}
-        {item.id ? (
+        {canReport(item) ? (
           <Ionicons name="chevron-forward" size={16} color="#D1D5DB" style={styles.chevron} />
         ) : null}
       </View>

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchItem, submitReport } from '../../lib/api';
+import { fetchItem, upsertItem, submitReport } from '../../lib/api';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import type { LiveItem } from '../../lib/types';
 
@@ -20,7 +20,8 @@ const POINTS_PER_REPORT = 10;
 const PHOTO_BONUS = 15;
 
 export default function ReportScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, name: paramName, category: paramCategory, storeId: paramStoreId } =
+    useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string }>();
   const router = useRouter();
   const { session } = useAuth();
 
@@ -31,11 +32,20 @@ export default function ReportScreen() {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    fetchItem(id as string)
-      .then(setItem)
-      .catch(() => setItem(null))
-      .finally(() => setLoading(false));
-  }, [id]);
+    if (id === 'new' && paramName && paramStoreId) {
+      // Item doesn't exist in Supabase yet — upsert it, then load
+      upsertItem(paramStoreId, paramName, paramCategory ?? 'General')
+        .then((newId) => fetchItem(newId))
+        .then(setItem)
+        .catch(() => setItem(null))
+        .finally(() => setLoading(false));
+    } else {
+      fetchItem(id as string)
+        .then(setItem)
+        .catch(() => setItem(null))
+        .finally(() => setLoading(false));
+    }
+  }, [id, paramName, paramCategory, paramStoreId]);
 
   const handleSubmit = async () => {
     if (!selected || !item) return;
