@@ -409,37 +409,45 @@ export default function ShopScreen() {
   );
 
   // Ensure the selected store exists in Supabase and return its ID.
-  // Auto-creates the store if it isn't tracked yet. Updates state in place.
+  // Throws if the store can't be found or created — callers must handle.
   async function ensureStoreId(): Promise<string | null> {
     if (selectedStore?.supabaseId) return selectedStore.supabaseId;
     if (!selectedStore?.name) return null;
-    try {
-      const sid = await upsertStore(selectedStore.name);
-      const updated: SelectedStore = {
-        name: selectedStore.name,
-        address: selectedStore.address,
-        osmId: selectedStore.osmId,
-        supabaseId: sid,
-      };
-      setSelectedStore(updated);
-      saveStore(updated);
-      return sid;
-    } catch {
-      return null;
-    }
+    const newSid = await upsertStore(selectedStore.name); // may throw
+    const updated: SelectedStore = {
+      name: selectedStore.name,
+      address: selectedStore.address,
+      osmId: selectedStore.osmId,
+      supabaseId: newSid,
+    };
+    setSelectedStore(updated);
+    saveStore(updated);
+    return newSid;
   }
 
   // Handlers
   async function handleAdd(name: string, category: string, itemId: string | null) {
+    // Always add to the local grocery list immediately
     addItem(sk, { name, category: category || 'General', itemId });
     refresh();
-    if (!itemId) {
-      const sid = await ensureStoreId();
-      if (sid) {
-        upsertItem(sid, name, category || 'General')
-          .then(() => fetchItems(sid).then(setStoreItems).catch(() => {}))
-          .catch(() => {});
-      }
+
+    // If the item already has a Supabase ID (picked from store suggestions) we're done
+    if (itemId) return;
+
+    // Custom item: upsert store + item in Supabase so stock status can be reported
+    try {
+      const storeSid = await ensureStoreId();
+      if (!storeSid) return; // no store name at all — nothing to sync
+      await upsertItem(storeSid, name, category || 'General');
+      // Refresh so the item's status dot appears immediately
+      const fresh = await fetchItems(storeSid);
+      setStoreItems(fresh);
+    } catch {
+      Alert.alert(
+        'Couldn\'t sync to store database',
+        'The item was added to your list.\n\nTo report its stock status, tap the item — it will sync automatically when you open the report.',
+        [{ text: 'OK' }],
+      );
     }
   }
 
@@ -539,7 +547,8 @@ export default function ShopScreen() {
           ) : status ? (
             <RowStatusDot status={status} />
           ) : (
-            <View style={styles.noDataDot} />
+            // No Supabase record yet — cloud icon prompts the user to tap to sync
+            <Ionicons name="cloud-upload-outline" size={18} color="#D1D5DB" style={{ width: 22, textAlign: 'center' }} />
           )}
           <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10} disabled={isReporting}>
             <Ionicons name="close" size={15} color="#D1D5DB" />
@@ -787,7 +796,6 @@ const styles = StyleSheet.create({
   stepBtn:         { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
   stepBtnDim:      { opacity: 0.35 },
   stepQty:         { fontSize: 13, fontWeight: '700', color: '#111827', minWidth: 20, textAlign: 'center' },
-  noDataDot:       { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#E5E7EB' },
   historyQty:      { fontSize: 12, fontWeight: '700', color: '#9CA3AF' },
   reAddBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
   reAddText:       { fontSize: 11, fontWeight: '700', color: PRIMARY },
