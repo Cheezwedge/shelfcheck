@@ -39,7 +39,7 @@ type HomeItem = {
 type HomeSection = { key: string; title: string; data: HomeItem[] };
 
 function storeKey(store: SelectedStore | null): string {
-  return store?.name ?? '__default__';
+  return store?.osmId ?? store?.name ?? '__default__';
 }
 
 export default function HomeScreen() {

@@ -25,6 +25,7 @@ import {
   ALL_CHAIN_KEYS,
   type ChainKey,
   type NearbyStore,
+  type FavoriteStore,
   type StoreSearchResult,
 } from '../lib/stores';
 import StoreMap from './StoreMap';
@@ -60,7 +61,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   const [zip, setZip] = useState('');
   const [zipError, setZipError] = useState<string | null>(null);
   const [hoveredOsmId, setHoveredOsmId] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(() => getFavorites());
+  const [favorites, setFavorites] = useState<FavoriteStore[]>(() => getFavorites());
   const [viewMode, setViewMode] = useState<'nearby' | 'saved'>('nearby');
   const [storeSearch, setStoreSearch] = useState('');
   const [searchResults, setSearchResults] = useState<StoreSearchResult[] | null>(null);
@@ -78,14 +79,15 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
 
   // Sorted for the list: favorites first, then by distance.
   // The map still uses filteredStores (stable ref) to avoid re-zooming.
+  const favoriteOsmIds = useMemo(() => new Set(favorites.map((f) => f.osmId)), [favorites]);
   const sortedStores = useMemo(
     () => [...filteredStores].sort((a, b) => {
-      const aFav = favorites.has(a.name) ? 0 : 1;
-      const bFav = favorites.has(b.name) ? 0 : 1;
+      const aFav = favoriteOsmIds.has(a.osmId) ? 0 : 1;
+      const bFav = favoriteOsmIds.has(b.osmId) ? 0 : 1;
       if (aFav !== bFav) return aFav - bFav;
       return a.distanceMi - b.distanceMi;
     }),
-    [filteredStores, favorites]
+    [filteredStores, favoriteOsmIds]
   );
 
   const allChainsActive = activeChains.size === ALL_CHAIN_KEYS.length;
@@ -189,7 +191,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
 
   async function handleSelect(store: NearbyStore) {
     const supabaseId = await findSupabaseStore(store.name);
-    saveStore({ name: store.name, supabaseId });
+    saveStore({ name: store.name, address: store.address, osmId: store.osmId, supabaseId });
     onSelect(store.name, supabaseId);
     onClose();
   }
@@ -224,15 +226,20 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
     }
   }
 
-  function handleFavorite(storeName: string) {
-    toggleFavorite(storeName);
+  function handleFavorite(store: NearbyStore) {
+    toggleFavorite({ osmId: store.osmId, name: store.name, address: store.address });
     setFavorites(getFavorites());
   }
 
-  async function handleSelectFavorite(name: string) {
-    const supabaseId = await findSupabaseStore(name).catch(() => null);
-    saveStore({ name, supabaseId });
-    onSelect(name, supabaseId);
+  function handleUnfavoriteSaved(fav: FavoriteStore) {
+    toggleFavorite(fav);
+    setFavorites(getFavorites());
+  }
+
+  async function handleSelectFavorite(fav: FavoriteStore) {
+    const supabaseId = await findSupabaseStore(fav.name).catch(() => null);
+    saveStore({ name: fav.name, address: fav.address, osmId: fav.osmId, supabaseId });
+    onSelect(fav.name, supabaseId);
     onClose();
   }
 
@@ -387,7 +394,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
               <Ionicons name="star-outline" size={13} color={viewMode === 'saved' ? '#fff' : '#6B7280'} />
               <Text style={[styles.modeBtnText, viewMode === 'saved' && styles.modeBtnTextActive]}>
                 {'Saved'}
-                {favorites.size > 0 ? ` (${favorites.size})` : ''}
+                {favorites.length > 0 ? ` (${favorites.length})` : ''}
               </Text>
             </TouchableOpacity>
           </View>
@@ -395,7 +402,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
 
         {viewMode === 'saved' ? (
           /* ── Saved stores view ─────────────────────────────────────────── */
-          favorites.size === 0 ? (
+          favorites.length === 0 ? (
             <View style={styles.centered}>
               <Ionicons name="star-outline" size={48} color="#D1D5DB" />
               <Text style={styles.hint}>No saved stores yet.</Text>
@@ -403,20 +410,25 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
             </View>
           ) : (
             <FlatList
-              data={[...favorites]}
-              keyExtractor={(name) => name}
+              data={favorites}
+              keyExtractor={(fav) => fav.osmId}
               contentContainerStyle={styles.list}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
-              renderItem={({ item: name }) => (
+              renderItem={({ item: fav }) => (
                 <View style={styles.storeRow}>
                   <View style={[styles.storeIcon, styles.storeIconFav]}>
                     <Ionicons name="star" size={18} color="#F59E0B" />
                   </View>
-                  <Text style={[styles.storeName, { flex: 1 }]}>{name}</Text>
-                  <TouchableOpacity onPress={() => handleFavorite(name)} hitSlop={8} style={styles.starBtn}>
+                  <View style={styles.storeInfo}>
+                    <Text style={styles.storeName}>{fav.name}</Text>
+                    {fav.address ? (
+                      <Text style={styles.storeDist}>{fav.address}</Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={() => handleUnfavoriteSaved(fav)} hitSlop={8} style={styles.starBtn}>
                     <Ionicons name="star" size={17} color="#F59E0B" />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleSelectFavorite(name)} style={styles.selectBtn}>
+                  <TouchableOpacity onPress={() => handleSelectFavorite(fav)} style={styles.selectBtn}>
                     <Text style={styles.selectBtnText}>Select</Text>
                   </TouchableOpacity>
                 </View>
@@ -579,7 +591,7 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
               }
               renderItem={({ item }) => {
                 const isHighlighted = item.osmId === hoveredOsmId;
-                const isFav = favorites.has(item.name);
+                const isFav = favoriteOsmIds.has(item.osmId);
                 return (
                   <View style={[styles.storeRow, isHighlighted && styles.storeRowHighlighted]}>
                     <TouchableOpacity
@@ -597,13 +609,20 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
                       <View style={styles.storeInfo}>
                         <Text style={styles.storeName}>{item.name}</Text>
                         <Text style={styles.storeDist}>
-                          {item.distanceMi < 0.1
-                            ? 'Less than 0.1 mi away'
-                            : `${item.distanceMi.toFixed(1)} mi away`}
+                          {item.address
+                            ? item.address
+                            : item.distanceMi < 0.1
+                              ? 'Less than 0.1 mi away'
+                              : `${item.distanceMi.toFixed(1)} mi away`}
                         </Text>
+                        {item.address ? (
+                          <Text style={styles.storeDist}>
+                            {item.distanceMi < 0.1 ? 'Less than 0.1 mi away' : `${item.distanceMi.toFixed(1)} mi away`}
+                          </Text>
+                        ) : null}
                       </View>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleFavorite(item.name)} hitSlop={8} style={styles.starBtn}>
+                    <TouchableOpacity onPress={() => handleFavorite(item)} hitSlop={8} style={styles.starBtn}>
                       <Ionicons
                         name={isFav ? 'star' : 'star-outline'}
                         size={17}

@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 export interface NearbyStore {
   osmId: string;
   name: string;
+  address: string;
   chainKey: ChainKey;
   lat: number;
   lon: number;
@@ -11,7 +12,15 @@ export interface NearbyStore {
 
 export interface SelectedStore {
   name: string;
+  address: string;
+  osmId: string;
   supabaseId: string | null;
+}
+
+export interface FavoriteStore {
+  osmId: string;
+  name: string;
+  address: string;
 }
 
 // ─── Allowed chain definitions ────────────────────────────────────────────────
@@ -49,6 +58,18 @@ export function matchChain(name: string): ChainKey | null {
     }
   }
   return null;
+}
+
+// ─── Address helper ────────────────────────────────────────────────────────────
+function parseAddress(tags: Record<string, string>): string {
+  const num = tags['addr:housenumber'];
+  const street = tags['addr:street'];
+  const city = tags['addr:city'];
+  const parts: string[] = [];
+  if (num && street) parts.push(`${num} ${street}`);
+  else if (street) parts.push(street);
+  if (city) parts.push(city);
+  return parts.join(', ');
 }
 
 // ─── Haversine distance ────────────────────────────────────────────────────────
@@ -106,6 +127,7 @@ export async function fetchNearbyStores(
     results.push({
       osmId: String(el.id),
       name,
+      address: parseAddress(el.tags ?? {}),
       chainKey,
       lat: elLat,
       lon: elLon,
@@ -113,12 +135,10 @@ export async function fetchNearbyStores(
     });
   }
 
-  // De-duplicate: keep closest location per chain+name combo
+  // De-duplicate by osmId only (same store can appear as both node and way in OSM)
   const seen = new Map<string, NearbyStore>();
   for (const s of results) {
-    const key = `${s.chainKey}:${s.name.toLowerCase()}`;
-    const existing = seen.get(key);
-    if (!existing || s.distanceMi < existing.distanceMi) seen.set(key, s);
+    if (!seen.has(s.osmId)) seen.set(s.osmId, s);
   }
 
   return Array.from(seen.values()).sort((a, b) => a.distanceMi - b.distanceMi);
@@ -154,19 +174,30 @@ export function saveStore(store: SelectedStore): void {
 // ─── Store favorites ────────────────────────────────────────────────────────────
 const FAVORITES_KEY = 'shelfcheck_favorite_stores';
 
-export function getFavorites(): Set<string> {
+export function getFavorites(): FavoriteStore[] {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // Migrate old format (array of strings) to new format (array of objects)
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+      return (parsed as string[]).map((name) => ({ osmId: name, name, address: '' }));
+    }
+    return parsed as FavoriteStore[];
   } catch {
-    return new Set();
+    return [];
   }
 }
 
-export function toggleFavorite(storeName: string): void {
+export function toggleFavorite(store: FavoriteStore): void {
   const favs = getFavorites();
-  favs.has(storeName) ? favs.delete(storeName) : favs.add(storeName);
-  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favs])); } catch {}
+  const idx = favs.findIndex((f) => f.osmId === store.osmId);
+  if (idx !== -1) {
+    favs.splice(idx, 1);
+  } else {
+    favs.push(store);
+  }
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); } catch {}
 }
 
 // ─── Free-text store name search (not limited to allowed chains) ───────────────
