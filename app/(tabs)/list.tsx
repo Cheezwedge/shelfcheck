@@ -220,7 +220,7 @@ function AddSheet({
 
 // ─── Main List Screen ─────────────────────────────────────────────────────────
 export default function ListScreen() {
-  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(null);
+  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
   const [pickerVisible, setPickerVisible] = useState(false);
   const [addSheetVisible, setAddSheetVisible] = useState(false);
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
@@ -228,11 +228,6 @@ export default function ListScreen() {
   const [storeItemsLoading, setStoreItemsLoading] = useState(false);
 
   const key = storeKey(selectedStore);
-
-  useEffect(() => {
-    const saved = getSavedStore();
-    if (saved) setSelectedStore(saved);
-  }, []);
 
   useEffect(() => {
     setListItems(getList(key));

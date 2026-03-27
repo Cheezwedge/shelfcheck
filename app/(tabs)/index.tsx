@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
 import { fetchItems, fetchStoreName, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
+import { useFocusEffect } from 'expo-router';
 import { getSavedStore, type SelectedStore } from '../../lib/stores';
 import { getList, type GroceryListItem } from '../../lib/groceryList';
 import StorePicker from '../../components/StorePicker';
@@ -48,7 +49,9 @@ export default function HomeScreen() {
   const [storeName, setStoreName] = useState('');
   const [search, setSearch] = useState('');
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(null);
+  // Lazy-init from localStorage so the first render already has the saved store,
+  // preventing a flash of the default Supabase store on page refresh.
+  const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
@@ -81,12 +84,6 @@ export default function HomeScreen() {
     }
   }, [activeStoreId, activeStoreName, selectedStore]);
 
-  // Load saved store on mount
-  useEffect(() => {
-    const saved = getSavedStore();
-    if (saved) setSelectedStore(saved);
-  }, []);
-
   useEffect(() => {
     setLoading(true);
     load();
@@ -108,6 +105,15 @@ export default function HomeScreen() {
   useEffect(() => {
     setListItems(getList(sk));
   }, [sk]);
+
+  // Reload Supabase items + grocery list whenever this tab becomes focused.
+  // This ensures newly upserted items (added from the List tab) appear immediately.
+  const isMounted = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (!isMounted.current) { isMounted.current = true; return; } // skip initial mount (load() handles it)
+    load();
+    setListItems(getList(sk));
+  }, [load, sk]));
 
   // Active (unchecked) grocery list items
   const listItemsActive = useMemo(
