@@ -69,6 +69,9 @@ function AddSheet({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
+  // Suggestions that share significant words with a custom query — shown for
+  // dedup confirmation before the user creates a brand-new item.
+  const [similarItems, setSimilarItems] = useState<Suggestion[]>([]);
   const inputRef = useRef<TextInput>(null);
 
   const inListMap = useMemo(() => {
@@ -80,18 +83,50 @@ function AddSheet({
   useEffect(() => {
     if (visible) {
       setQuery('');
+      setSimilarItems([]);
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [visible]);
+
+  // Clear similar-items prompt whenever the query changes
+  useEffect(() => { setSimilarItems([]); }, [query]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? suggestions.filter((s) => s.name.toLowerCase().includes(q)) : suggestions;
   }, [query, suggestions]);
 
+  const trimmedQuery = query.trim();
   const showCustomAdd =
-    query.trim().length > 0 &&
-    !suggestions.some((s) => s.name.toLowerCase() === query.trim().toLowerCase());
+    trimmedQuery.length > 0 &&
+    !suggestions.some((s) => s.name.toLowerCase() === trimmedQuery.toLowerCase());
+
+  /** Called when the user taps "Add {query}" for a name that isn't in suggestions. */
+  function handleCustomAdd() {
+    if (!trimmedQuery) return;
+    const qLower = trimmedQuery.toLowerCase();
+
+    // Find suggestions that share at least one significant word (≥3 chars) with the query.
+    // This catches "Organic Milk" when user types "Milk", helping avoid near-duplicates.
+    const words = qLower.split(/\s+/).filter((w) => w.length >= 3);
+    const similar =
+      words.length > 0
+        ? suggestions.filter((s) => {
+            const sLower = s.name.toLowerCase();
+            return sLower !== qLower && words.some((w) => sLower.includes(w));
+          })
+        : [];
+
+    if (similar.length > 0 && similarItems.length === 0) {
+      // First tap: show similar items so the user can pick one instead of duplicating
+      setSimilarItems(similar);
+    } else {
+      // Second tap (user confirmed) or no similar items: create the new item
+      onAdd(trimmedQuery, 'General', null);
+      setQuery('');
+      setSimilarItems([]);
+    }
+  }
 
   return (
     <Modal
@@ -121,9 +156,7 @@ function AddSheet({
               placeholderTextColor="#9CA3AF"
               value={query}
               onChangeText={setQuery}
-              onSubmitEditing={() => {
-                if (showCustomAdd) { onAdd(query.trim(), 'General', null); setQuery(''); }
-              }}
+              onSubmitEditing={() => { if (showCustomAdd) handleCustomAdd(); }}
               returnKeyType="done"
               clearButtonMode="while-editing"
             />
@@ -142,23 +175,67 @@ function AddSheet({
             contentContainerStyle={sheet.list}
             ItemSeparatorComponent={() => <View style={sheet.sep} />}
             ListHeaderComponent={
-              showCustomAdd ? (
-                <TouchableOpacity
-                  style={sheet.customRow}
-                  onPress={() => { onAdd(query.trim(), 'General', null); setQuery(''); }}
-                >
-                  <View style={sheet.customIcon}>
-                    <Ionicons name="add" size={18} color={PRIMARY} />
+              <>
+                {/* ── Similar-items dedup prompt ── */}
+                {similarItems.length > 0 && (
+                  <View style={sheet.similarBox}>
+                    <View style={sheet.similarTitleRow}>
+                      <Ionicons name="alert-circle-outline" size={15} color="#F59E0B" />
+                      <Text style={sheet.similarTitle}>
+                        Similar items already at this store:
+                      </Text>
+                    </View>
+                    {similarItems.map((s) => (
+                      <TouchableOpacity
+                        key={s.name}
+                        style={sheet.similarRow}
+                        onPress={() => {
+                          onAdd(s.name, s.category, s.itemId);
+                          setQuery('');
+                          setSimilarItems([]);
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={sheet.similarName}>{s.name}</Text>
+                          <Text style={sheet.similarCat}>{s.category}</Text>
+                        </View>
+                        <View style={sheet.useThisBtn}>
+                          <Text style={sheet.useThisText}>Use this</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={sheet.addAnywayBtn}
+                      onPress={() => {
+                        onAdd(trimmedQuery, 'General', null);
+                        setQuery('');
+                        setSimilarItems([]);
+                      }}
+                    >
+                      <Ionicons name="add-circle-outline" size={15} color="#6B7280" />
+                      <Text style={sheet.addAnywayText}>
+                        Add "{trimmedQuery}" as a separate item
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={sheet.customLabel}>Add "{query.trim()}"</Text>
-                    <Text style={sheet.customSub}>Custom item · tap to add to list</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null
+                )}
+
+                {/* ── Add custom row (shown only when no dedup prompt) ── */}
+                {showCustomAdd && similarItems.length === 0 && (
+                  <TouchableOpacity style={sheet.customRow} onPress={handleCustomAdd}>
+                    <View style={sheet.customIcon}>
+                      <Ionicons name="add" size={18} color={PRIMARY} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={sheet.customLabel}>Add "{trimmedQuery}"</Text>
+                      <Text style={sheet.customSub}>Custom item · tap to add to list</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </>
             }
             ListEmptyComponent={
-              !showCustomAdd ? (
+              !showCustomAdd && similarItems.length === 0 ? (
                 <View style={sheet.centered}>
                   <Text style={sheet.emptyText}>No matching items found.</Text>
                 </View>
@@ -764,10 +841,21 @@ const sheet = StyleSheet.create({
   stepBtnDim:  { opacity: 0.35 },
   stepQty:     { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 28, textAlign: 'center' },
   addBtn:      { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  customRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
-  customIcon:  { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
-  customLabel: { fontSize: 15, fontWeight: '700', color: PRIMARY },
-  customSub:   { fontSize: 11, color: '#6B7280' },
-  centered:    { paddingVertical: 40, alignItems: 'center' },
-  emptyText:   { fontSize: 14, color: '#9CA3AF' },
+  customRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
+  customIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
+  customLabel:    { fontSize: 15, fontWeight: '700', color: PRIMARY },
+  customSub:      { fontSize: 11, color: '#6B7280' },
+  centered:       { paddingVertical: 40, alignItems: 'center' },
+  emptyText:      { fontSize: 14, color: '#9CA3AF' },
+  // Similar-items dedup prompt
+  similarBox:     { backgroundColor: '#FFFBEB', borderRadius: 12, borderWidth: 1, borderColor: '#FDE68A', padding: 12, marginBottom: 8, gap: 8 },
+  similarTitleRow:{ flexDirection: 'row', alignItems: 'center', gap: 6 },
+  similarTitle:   { fontSize: 12, fontWeight: '700', color: '#92400E', flex: 1 },
+  similarRow:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 10 },
+  similarName:    { fontSize: 14, fontWeight: '600', color: '#111827' },
+  similarCat:     { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
+  useThisBtn:     { backgroundColor: PRIMARY + '18', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  useThisText:    { fontSize: 12, fontWeight: '700', color: PRIMARY },
+  addAnywayBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 4 },
+  addAnywayText:  { fontSize: 12, color: '#6B7280' },
 });

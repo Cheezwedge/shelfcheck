@@ -96,20 +96,23 @@ export async function upsertItem(
   name: string,
   category: string
 ): Promise<string> {
+  // Normalize: collapse internal whitespace and trim edges so "Whole  Milk " ≡ "Whole Milk"
+  const normalized = name.trim().replace(/\s+/g, ' ');
+
   // Look for an existing item with the same name in this store (case-insensitive)
   const { data: existing } = await supabase
     .from('items')
     .select('id')
     .eq('store_id', storeId)
-    .ilike('name', name)
+    .ilike('name', normalized)
     .maybeSingle();
 
   if (existing?.id) return existing.id as string;
 
-  // Create new item
+  // Create new item (store the normalized name to keep the DB tidy)
   const { data, error } = await supabase
     .from('items')
-    .insert({ store_id: storeId, name, category })
+    .insert({ store_id: storeId, name: normalized, category })
     .select('id')
     .single();
 
