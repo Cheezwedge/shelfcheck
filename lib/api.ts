@@ -17,6 +17,7 @@ function toLocalItem(row: ItemRow): LiveItem {
     category: row.category,
     status: row.status ?? 'uncertain',
     lastReportedAt: row.last_reported_at,
+    quantity: row.quantity ?? null,
   };
 }
 

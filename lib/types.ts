@@ -9,6 +9,7 @@ export interface ItemRow {
   created_at: string;
   status: StockStatus | null;       // null = no reports yet → shown as 'uncertain'
   last_reported_at: string | null;  // ISO timestamp of the most recent report
+  quantity: number | null;          // estimated qty from most recent report
 }
 
 /** UI-facing shape used by screens */
@@ -19,4 +20,5 @@ export interface LiveItem {
   category: string;
   status: StockStatus;              // guaranteed non-null (null → 'uncertain')
   lastReportedAt: string | null;    // ISO timestamp, null if never reported
+  quantity: number | null;          // estimated qty from most recent in-stock report
 }

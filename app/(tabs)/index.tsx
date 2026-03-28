@@ -550,7 +550,7 @@ export default function ShopScreen() {
           {isReporting ? (
             <ActivityIndicator size="small" color={PRIMARY} style={{ width: 22 }} />
           ) : status ? (
-            <FreshnessTag status={status} lastReportedAt={item.live?.lastReportedAt ?? null} />
+            <FreshnessTag status={status} lastReportedAt={item.live?.lastReportedAt ?? null} quantity={item.live?.quantity} />
           ) : (
             // No Supabase record yet — tapping syncs the item and opens reporting
             <TouchableOpacity
@@ -581,7 +581,7 @@ export default function ShopScreen() {
               <Text style={styles.rowName} numberOfLines={1}>{item.live.name}</Text>
               <Text style={styles.rowCat}>{item.live.category}</Text>
             </View>
-            <FreshBadge status={item.live.status} lastReportedAt={item.live.lastReportedAt} />
+            <FreshBadge status={item.live.status} lastReportedAt={item.live.lastReportedAt} quantity={item.live.quantity} />
             <Ionicons name="chevron-forward" size={14} color="#D1D5DB" />
           </TouchableOpacity>
           <TouchableOpacity
@@ -759,15 +759,18 @@ export default function ShopScreen() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 /** Two-line tag used on active list rows: status label + freshness below it. */
-function FreshnessTag({ status, lastReportedAt }: { status: StockStatus; lastReportedAt: string | null }) {
+function FreshnessTag({ status, lastReportedAt, quantity }: { status: StockStatus; lastReportedAt: string | null; quantity?: number | null }) {
   const statusColor = STATUS_COLORS[status];
   const statusLabel = STATUS_LABELS[status];
   const f = getFreshness(lastReportedAt);
+  const qtyLabel = status === 'in-stock' && quantity != null
+    ? quantity >= 100 ? '~100+' : `~${quantity}`
+    : null;
   return (
     <View style={ftag.wrap}>
       <View style={[ftag.dot, { backgroundColor: statusColor }]} />
       <View>
-        <Text style={[ftag.status, { color: statusColor }]}>{statusLabel}</Text>
+        <Text style={[ftag.status, { color: statusColor }]}>{statusLabel}{qtyLabel ? ` (${qtyLabel})` : ''}</Text>
         <Text style={[ftag.fresh, { color: f.color }]}>{f.symbol} {f.label}</Text>
       </View>
     </View>
@@ -775,15 +778,18 @@ function FreshnessTag({ status, lastReportedAt }: { status: StockStatus; lastRep
 }
 
 /** Pill badge used on AT THIS STORE rows: status + freshness on two lines. */
-function FreshBadge({ status, lastReportedAt }: { status: StockStatus; lastReportedAt: string | null }) {
+function FreshBadge({ status, lastReportedAt, quantity }: { status: StockStatus; lastReportedAt: string | null; quantity?: number | null }) {
   const statusColor = STATUS_COLORS[status];
   const statusLabel = STATUS_LABELS[status];
   const f = getFreshness(lastReportedAt);
+  const qtyLabel = status === 'in-stock' && quantity != null
+    ? quantity >= 100 ? '~100+' : `~${quantity}`
+    : null;
   return (
     <View style={[badge.wrap, { backgroundColor: statusColor + '14', borderColor: statusColor + '35' }]}>
       <View style={[badge.dot, { backgroundColor: statusColor }]} />
       <View>
-        <Text style={[badge.statusText, { color: statusColor }]}>{statusLabel}</Text>
+        <Text style={[badge.statusText, { color: statusColor }]}>{statusLabel}{qtyLabel ? ` ${qtyLabel}` : ''}</Text>
         <Text style={[badge.freshText, { color: f.color }]}>{f.symbol} {f.label}</Text>
       </View>
     </View>
