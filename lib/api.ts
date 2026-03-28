@@ -29,9 +29,20 @@ function toLocalItem(row: ItemRow): LiveItem {
  * filtered by the store's chain, with status from reports at this location only.
  */
 export async function fetchItems(storeId = DEFAULT_STORE_ID): Promise<LiveItem[]> {
-  const { data, error } = await supabase
+  // Try chain-aware RPC first (requires migration 006). Fall back to the view.
+  const { data: rpcData, error: rpcError } = await supabase
     .rpc('fetch_store_items', { p_store_id: storeId });
 
+  if (!rpcError) {
+    return (rpcData as ItemRow[]).map(toLocalItem);
+  }
+
+  // Fallback: pre-migration 006 view query
+  const { data, error } = await supabase
+    .from('items_with_status')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('name');
   if (error) throw error;
   return (data as ItemRow[]).map(toLocalItem);
 }
@@ -131,8 +142,8 @@ export async function upsertItem(
       .insert({ chain_id: chainId, store_id: storeId, name: normalized, category })
       .select('id')
       .single();
-    if (error) throw error;
-    return (data as { id: string }).id;
+    // If chain_id column doesn't exist yet (pre-migration 006), fall through to store-scoped insert
+    if (!error) return (data as { id: string }).id;
   }
 
   // Fallback: store-scoped item (store has no chain match)
@@ -182,9 +193,14 @@ export async function upsertStore(name: string): Promise<string> {
     }
   }
 
+  // Only include chain_id in the insert if resolved — omitting it is safe;
+  // the column is nullable and migration 006 will backfill existing rows.
+  const storePayload: Record<string, unknown> = { name };
+  if (chainId) storePayload.chain_id = chainId;
+
   const { data, error } = await supabase
     .from('stores')
-    .insert({ name, chain_id: chainId })
+    .insert(storePayload)
     .select('id')
     .single();
   if (error) throw error;
