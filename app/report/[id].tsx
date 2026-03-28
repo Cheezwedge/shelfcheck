@@ -29,6 +29,7 @@ export default function ReportScreen() {
   const [loading, setLoading] = useState(true);
   const [notTracked, setNotTracked] = useState(false);
   const [selected, setSelected] = useState<'in-stock' | 'out-of-stock' | null>(null);
+  const [quantityEstimate, setQuantityEstimate] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [alreadyReported, setAlreadyReported] = useState(false);
@@ -59,7 +60,7 @@ export default function ReportScreen() {
     if (!selected || !item) return;
     setSubmitting(true);
     try {
-      await submitReport(item.id, selected, getReportingUserId(session));
+      await submitReport(item.id, selected, getReportingUserId(session), quantityEstimate);
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {
@@ -188,7 +189,7 @@ export default function ReportScreen() {
 
           <TouchableOpacity
             style={[styles.stockBtn, styles.stockBtnOut, selected === 'out-of-stock' && styles.stockBtnOutActive]}
-            onPress={() => setSelected('out-of-stock')}
+            onPress={() => { setSelected('out-of-stock'); setQuantityEstimate(null); }}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -206,6 +207,27 @@ export default function ReportScreen() {
             </View>
           </TouchableOpacity>
         </View>
+
+        {/* Quantity picker — only when In Stock */}
+        {selected === 'in-stock' && (
+          <>
+            <Text style={styles.sectionLabel}>ESTIMATED QUANTITY (OPTIONAL)</Text>
+            <View style={styles.qtyRow}>
+              {([1, 5, 10, 50, 100] as const).map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[styles.qtyBtn, quantityEstimate === n && styles.qtyBtnActive]}
+                  onPress={() => setQuantityEstimate(quantityEstimate === n ? null : n)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.qtyBtnText, quantityEstimate === n && styles.qtyBtnTextActive]}>
+                    {n === 100 ? '100+' : String(n)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
         <Text style={styles.sectionLabel}>ADD EVIDENCE (OPTIONAL)</Text>
 
@@ -293,6 +315,19 @@ const styles = StyleSheet.create({
   labelActive:      { color: '#fff' },
   stockBtnSub:      { fontSize: 11, marginTop: 1 },
   subActive:        { color: 'rgba(255,255,255,0.8)' },
+  qtyRow: {
+    flexDirection: 'row', gap: 8, marginBottom: 14,
+  },
+  qtyBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 9, borderRadius: 10,
+    backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#D1D5DB',
+  },
+  qtyBtnActive: {
+    backgroundColor: PRIMARY, borderColor: PRIMARY,
+  },
+  qtyBtnText:       { fontSize: 13, fontWeight: '700', color: '#374151' },
+  qtyBtnTextActive: { color: '#fff' },
   evidenceRow:      { flexDirection: 'row', gap: 10, marginBottom: 12 },
   evidenceBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
