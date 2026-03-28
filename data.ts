@@ -24,16 +24,14 @@ export interface Freshness {
 }
 
 export function getFreshness(lastReportedAt: string | null): Freshness {
-  if (!lastReportedAt) return { level: 'none',   label: 'No data', symbol: '?', color: '#D1D5DB' };
-  const mins = (Date.now() - new Date(lastReportedAt).getTime()) / 60_000;
-  const hrs  = mins / 60;
-  const days = hrs  / 24;
-  if (mins < 60)  return { level: 'now',    label: 'Just now', symbol: '✓', color: '#1D9E75' };
-  if (hrs  < 4)   return { level: 'fresh',  label: 'Fresh',    symbol: '✓', color: '#1D9E75' };
-  if (hrs  < 12)  return { level: 'aging',  label: 'Aging',    symbol: '~', color: '#F59E0B' };
-  if (days < 2)   return { level: 'stale',  label: 'Stale',    symbol: '⚠', color: '#9CA3AF' };
-  if (days < 7)   return { level: 'old',    label: 'Old',      symbol: '?', color: '#D1D5DB' };
-  return                  { level: 'old',    label: 'Expired',  symbol: '×', color: '#D1D5DB' };
+  if (!lastReportedAt) return { level: 'none',  label: 'No data',  symbol: '?', color: '#D1D5DB' };
+  const hrs = (Date.now() - new Date(lastReportedAt).getTime()) / 3_600_000;
+  if (hrs <  2)  return { level: 'now',   label: 'Just now', symbol: '✓', color: '#1D9E75' };
+  if (hrs <  4)  return { level: 'fresh', label: 'Fresh',    symbol: '✓', color: '#1D9E75' };
+  if (hrs <  6)  return { level: 'aging', label: 'Aging',    symbol: '~', color: '#F59E0B' };
+  if (hrs < 12)  return { level: 'stale', label: 'Stale',    symbol: '⚠', color: '#9CA3AF' };
+  if (hrs < 24)  return { level: 'old',   label: 'Old',      symbol: '?', color: '#D1D5DB' };
+  return                 { level: 'old',   label: 'Expired',  symbol: '×', color: '#D1D5DB' };
 }
 
 /**

@@ -33,14 +33,15 @@ export default function TabLayout() {
   const handleAccountPress = () => {
     if (isGuest) {
       router.push('/auth');
+    } else if (Platform.OS === 'web') {
+      // Alert.alert maps to window.alert on web which doesn't support buttons
+      if ((window as any).confirm('Sign out of your account?')) {
+        signOut().catch(() => {});
+      }
     } else {
       Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => { try { await signOut(); } catch {} },
-        },
+        { text: 'Sign Out', style: 'destructive', onPress: () => signOut().catch(() => {}) },
       ]);
     }
   };

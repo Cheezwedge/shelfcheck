@@ -165,7 +165,7 @@ export interface Profile {
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, points, pending_points, reports_count, accuracy_ratio, streak_days, joined_at')
+    .select('*')
     .eq('id', userId)
     .single();
 
@@ -173,7 +173,17 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
     if (error.code === 'PGRST116') return null;
     throw error;
   }
-  return data as Profile;
+  // Map with defaults so older DB schemas (pre-migration 002) still work
+  const row = data as Record<string, any>;
+  return {
+    id: row.id,
+    points:         row.points         ?? 0,
+    pending_points: row.pending_points ?? 0,
+    reports_count:  row.reports_count  ?? 0,
+    accuracy_ratio: row.accuracy_ratio ?? 1,
+    streak_days:    row.streak_days    ?? 0,
+    joined_at:      row.joined_at      ?? null,
+  };
 }
 
 // ─── Admin functions ──────────────────────────────────────────────────────────
