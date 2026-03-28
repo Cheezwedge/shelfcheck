@@ -24,14 +24,25 @@ export interface Freshness {
 }
 
 export function getFreshness(lastReportedAt: string | null): Freshness {
-  if (!lastReportedAt) return { level: 'none',  label: 'No data',  symbol: '?', color: '#D1D5DB' };
-  const hrs = (Date.now() - new Date(lastReportedAt).getTime()) / 3_600_000;
-  if (hrs <  2)  return { level: 'now',   label: 'Just now', symbol: '✓', color: '#1D9E75' };
-  if (hrs <  4)  return { level: 'fresh', label: 'Fresh',    symbol: '✓', color: '#1D9E75' };
-  if (hrs <  6)  return { level: 'aging', label: 'Aging',    symbol: '~', color: '#F59E0B' };
-  if (hrs < 12)  return { level: 'stale', label: 'Stale',    symbol: '⚠', color: '#9CA3AF' };
-  if (hrs < 24)  return { level: 'old',   label: 'Old',      symbol: '?', color: '#D1D5DB' };
-  return                 { level: 'old',   label: 'Expired',  symbol: '×', color: '#D1D5DB' };
+  if (!lastReportedAt) return { level: 'none', label: 'No data', symbol: '?', color: '#D1D5DB' };
+  const hrs  = (Date.now() - new Date(lastReportedAt).getTime()) / 3_600_000;
+  const floorHrs = Math.floor(hrs);
+  const days = Math.floor(hrs / 24);
+
+  // Human label in 1-hour increments
+  const label = hrs < 1
+    ? '< 1h ago'
+    : hrs < 24
+      ? `${floorHrs}h ago`
+      : `${days}d ago`;
+
+  // Color tier based on 2-hour staleness steps
+  if (hrs <  2) return { level: 'now',   label, symbol: '✓', color: '#1D9E75' };
+  if (hrs <  4) return { level: 'fresh', label, symbol: '✓', color: '#1D9E75' };
+  if (hrs <  6) return { level: 'aging', label, symbol: '~', color: '#F59E0B' };
+  if (hrs < 12) return { level: 'stale', label, symbol: '⚠', color: '#9CA3AF' };
+  if (hrs < 24) return { level: 'old',   label, symbol: '?', color: '#D1D5DB' };
+  return               { level: 'old',   label, symbol: '×', color: '#D1D5DB' };
 }
 
 /**

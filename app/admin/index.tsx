@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -99,29 +99,28 @@ export default function AdminScreen() {
     });
   }
 
-  function confirmDelete(item: AdminItem) {
-    Alert.alert(
-      'Delete Item',
-      `Delete "${item.name}" and its ${item.report_count} report${item.report_count !== 1 ? 's' : ''}? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              await deleteItem(item.id);
-              setItems((prev) => prev.filter((i) => i.id !== item.id));
-            } catch {
-              Alert.alert('Error', 'Failed to delete item.');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
+  async function confirmDelete(item: AdminItem) {
+    const msg = `Delete "${item.name}" and its ${item.report_count} report${item.report_count !== 1 ? 's' : ''}? This cannot be undone.`;
+    const ok = Platform.OS === 'web'
+      ? (window as any).confirm(msg)
+      : await new Promise<boolean>((res) => {
+          const { Alert } = require('react-native');
+          Alert.alert('Delete Item', msg, [
+            { text: 'Cancel', style: 'cancel', onPress: () => res(false) },
+            { text: 'Delete', style: 'destructive', onPress: () => res(true) },
+          ]);
+        });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await deleteItem(item.id);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+    } catch (err: any) {
+      const msg2 = err?.message ?? 'Failed to delete item.';
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + msg2);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openRename(item: AdminItem) {
@@ -136,8 +135,8 @@ export default function AdminScreen() {
       await renameItem(renameTarget.id, renameText.trim());
       setItems((prev) => prev.map((i) => i.id === renameTarget.id ? { ...i, name: renameText.trim() } : i));
       setRenameTarget(null);
-    } catch {
-      Alert.alert('Error', 'Failed to rename item.');
+    } catch (err: any) {
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + (err?.message ?? 'Failed to rename item.'));
     } finally {
       setSaving(false);
     }
@@ -148,30 +147,29 @@ export default function AdminScreen() {
     const keepItem = items.find((i) => i.id === keepId)!;
     const dropItem = items.find((i) => i.id === dropId)!;
 
-    Alert.alert(
-      'Merge Items',
-      `Merge into "${keepItem.name}"?\n\nThis will move all ${dropItem.report_count} report(s) from "${dropItem.name}" into "${keepItem.name}", then delete "${dropItem.name}".`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Merge',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              await mergeItems(keepId, dropId);
-              await load(); // refresh list
-              setSelected(new Set());
-              setSelectMode(false);
-            } catch {
-              Alert.alert('Error', 'Merge failed.');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
+    const msg = `Merge "${dropItem.name}" into "${keepItem.name}"?\n\n${dropItem.report_count} report(s) will be moved to "${keepItem.name}", then "${dropItem.name}" will be deleted.`;
+    const ok = Platform.OS === 'web'
+      ? (window as any).confirm(msg)
+      : await new Promise<boolean>((res) => {
+          const { Alert } = require('react-native');
+          Alert.alert('Merge Items', msg, [
+            { text: 'Cancel', style: 'cancel', onPress: () => res(false) },
+            { text: 'Merge', style: 'destructive', onPress: () => res(true) },
+          ]);
+        });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await mergeItems(keepId, dropId);
+      await load();
+      setSelected(new Set());
+      setSelectMode(false);
+    } catch (err: any) {
+      const msg2 = err?.message ?? 'Merge failed.';
+      if (Platform.OS === 'web') (window as any).alert('Error: ' + msg2);
+    } finally {
+      setSaving(false);
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
