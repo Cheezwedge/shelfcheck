@@ -526,45 +526,54 @@ export default function ShopScreen() {
       const isReporting = reportingListId === item.list.id;
       return (
         <View style={styles.row}>
-          <TouchableOpacity onPress={() => handleToggle(item.list.id)} hitSlop={10} disabled={isReporting}>
+          {/* Checkbox */}
+          <TouchableOpacity onPress={() => handleToggle(item.list.id)} hitSlop={10} disabled={isReporting} style={styles.rowCheckWrap}>
             <View style={styles.checkEmpty} />
           </TouchableOpacity>
+
+          {/* Body: name on top, meta below */}
           <TouchableOpacity style={styles.rowBody} onPress={() => handleReportActive(item)} activeOpacity={0.7} disabled={isReporting}>
-            <Text style={styles.rowName} numberOfLines={1}>{item.list.name}</Text>
-            <Text style={styles.rowCat}>{item.list.category}</Text>
+            <Text style={styles.rowName} numberOfLines={2}>{item.list.name}</Text>
+            <View style={styles.rowMetaRow}>
+              <Text style={styles.rowCat}>{item.list.category}</Text>
+              {!isReporting && status && (
+                <>
+                  <Text style={styles.rowMetaDot}> · </Text>
+                  <FreshnessTag status={status} lastReportedAt={item.live?.lastReportedAt ?? null} quantity={item.live?.quantity} />
+                </>
+              )}
+              {!isReporting && !status && (
+                <TouchableOpacity onPress={() => handleReportActive(item)} hitSlop={8} style={styles.syncBtn}>
+                  <Ionicons name="cloud-upload-outline" size={12} color="#9CA3AF" />
+                  <Text style={styles.syncBtnText}>Sync</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </TouchableOpacity>
-          <View style={styles.stepper}>
-            <TouchableOpacity
-              onPress={() => handleQty(item.list.id, -1)}
-              hitSlop={8}
-              style={[styles.stepBtn, item.list.quantity <= 1 && styles.stepBtnDim]}
-              disabled={item.list.quantity <= 1 || isReporting}
-            >
-              <Ionicons name="remove" size={13} color={item.list.quantity <= 1 ? '#D1D5DB' : '#6B7280'} />
-            </TouchableOpacity>
-            <Text style={styles.stepQty}>{item.list.quantity}</Text>
-            <TouchableOpacity onPress={() => handleQty(item.list.id, 1)} hitSlop={8} style={styles.stepBtn} disabled={isReporting}>
-              <Ionicons name="add" size={13} color="#6B7280" />
-            </TouchableOpacity>
+
+          {/* Right side: stepper + spinner/close */}
+          <View style={styles.rowRight}>
+            <View style={styles.stepper}>
+              <TouchableOpacity
+                onPress={() => handleQty(item.list.id, -1)}
+                hitSlop={8}
+                style={[styles.stepBtn, item.list.quantity <= 1 && styles.stepBtnDim]}
+                disabled={item.list.quantity <= 1 || isReporting}
+              >
+                <Ionicons name="remove" size={13} color={item.list.quantity <= 1 ? '#D1D5DB' : '#6B7280'} />
+              </TouchableOpacity>
+              <Text style={styles.stepQty}>{item.list.quantity}</Text>
+              <TouchableOpacity onPress={() => handleQty(item.list.id, 1)} hitSlop={8} style={styles.stepBtn} disabled={isReporting}>
+                <Ionicons name="add" size={13} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            {isReporting
+              ? <ActivityIndicator size="small" color={PRIMARY} style={{ width: 22 }} />
+              : <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10} disabled={isReporting}>
+                  <Ionicons name="close" size={15} color="#D1D5DB" />
+                </TouchableOpacity>
+            }
           </View>
-          {isReporting ? (
-            <ActivityIndicator size="small" color={PRIMARY} style={{ width: 22 }} />
-          ) : status ? (
-            <FreshnessTag status={status} lastReportedAt={item.live?.lastReportedAt ?? null} quantity={item.live?.quantity} />
-          ) : (
-            // No Supabase record yet — tapping syncs the item and opens reporting
-            <TouchableOpacity
-              onPress={() => handleReportActive(item)}
-              hitSlop={8}
-              style={styles.syncBtn}
-            >
-              <Ionicons name="cloud-upload-outline" size={13} color="#9CA3AF" />
-              <Text style={styles.syncBtnText}>Sync</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => handleRemove(item.list.id)} hitSlop={10} disabled={isReporting}>
-            <Ionicons name="close" size={15} color="#D1D5DB" />
-          </TouchableOpacity>
         </View>
       );
     }
@@ -577,12 +586,12 @@ export default function ShopScreen() {
             onPress={() => router.push(`/report/${item.live.id}`)}
             activeOpacity={0.7}
           >
-            <View style={styles.rowBody}>
-              <Text style={styles.rowName} numberOfLines={1}>{item.live.name}</Text>
+            <Text style={styles.rowName} numberOfLines={2}>{item.live.name}</Text>
+            <View style={styles.rowMetaRow}>
               <Text style={styles.rowCat}>{item.live.category}</Text>
+              <Text style={styles.rowMetaDot}> · </Text>
+              <FreshnessTag status={item.live.status} lastReportedAt={item.live.lastReportedAt} quantity={item.live.quantity} />
             </View>
-            <FreshBadge status={item.live.status} lastReportedAt={item.live.lastReportedAt} quantity={item.live.quantity} />
-            <Ionicons name="chevron-forward" size={14} color="#D1D5DB" />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleAddStoreItem(item.live)}
@@ -598,15 +607,12 @@ export default function ShopScreen() {
     // history
     return (
       <View style={[styles.row, styles.rowHistory]}>
-        <TouchableOpacity onPress={() => handleReAdd(item.list.id)} hitSlop={10}>
+        <TouchableOpacity onPress={() => handleReAdd(item.list.id)} hitSlop={10} style={styles.rowCheckWrap}>
           <View style={styles.checkDone}>
             <Ionicons name="checkmark" size={12} color="#fff" />
           </View>
         </TouchableOpacity>
-        <Text style={styles.rowNameDone} numberOfLines={1}>{item.list.name}</Text>
-        {item.list.quantity > 1 && (
-          <Text style={styles.historyQty}>×{item.list.quantity}</Text>
-        )}
+        <Text style={styles.rowNameDone} numberOfLines={2}>{item.list.name}</Text>
         <TouchableOpacity onPress={() => handleReAdd(item.list.id)} style={styles.reAddBtn} hitSlop={8}>
           <Ionicons name="refresh-outline" size={13} color={PRIMARY} />
           <Text style={styles.reAddText}>Re-add</Text>
@@ -758,22 +764,19 @@ export default function ShopScreen() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-/** Two-line tag used on active list rows: status label + freshness below it. */
+/** Inline tag: colored status + optional qty + freshness, all on one line. */
 function FreshnessTag({ status, lastReportedAt, quantity }: { status: StockStatus; lastReportedAt: string | null; quantity?: number | null }) {
   const statusColor = STATUS_COLORS[status];
   const statusLabel = STATUS_LABELS[status];
   const f = getFreshness(lastReportedAt);
   const qtyLabel = status === 'in-stock' && quantity != null
-    ? quantity >= 100 ? '~100+' : `~${quantity}`
-    : null;
+    ? quantity >= 100 ? ' ~100+' : ` ~${quantity}`
+    : '';
   return (
-    <View style={ftag.wrap}>
-      <View style={[ftag.dot, { backgroundColor: statusColor }]} />
-      <View>
-        <Text style={[ftag.status, { color: statusColor }]}>{statusLabel}{qtyLabel ? ` (${qtyLabel})` : ''}</Text>
-        <Text style={[ftag.fresh, { color: f.color }]}>{f.symbol} {f.label}</Text>
-      </View>
-    </View>
+    <Text style={ftag.line}>
+      <Text style={{ color: statusColor, fontWeight: '700' }}>{statusLabel}{qtyLabel}</Text>
+      <Text style={{ color: f.color }}>{' '}{f.symbol} {f.label}</Text>
+    </Text>
   );
 }
 
@@ -827,12 +830,15 @@ const styles = StyleSheet.create({
   // Active row
   row:             { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },
   rowHistory:      { opacity: 0.65 },
-  rowBody:         { flex: 1, gap: 2, minWidth: 0 },
-  rowName:         { fontSize: 14, fontWeight: '600', color: '#111827' },
+  rowCheckWrap:    { alignSelf: 'flex-start', paddingTop: 2 },
+  rowBody:         { flex: 1, minWidth: 0, gap: 3 },
+  rowName:         { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1 },
   rowNameDone:     { flex: 1, fontSize: 14, color: '#9CA3AF', textDecorationLine: 'line-through' },
-  rowMeta:         { flexDirection: 'row', alignItems: 'center' },
+  rowMetaRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 2 },
+  rowMetaDot:      { fontSize: 11, color: '#D1D5DB' },
   rowCat:          { fontSize: 11, color: '#B0B7C3' },
   rowTime:         { fontSize: 11, color: '#B0B7C3' },
+  rowRight:        { alignItems: 'center', gap: 4 },
   checkEmpty:      { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
   checkDone:       { width: 22, height: 22, borderRadius: 11, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
   stepper:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, overflow: 'hidden' },
@@ -840,14 +846,14 @@ const styles = StyleSheet.create({
   stepBtnDim:      { opacity: 0.35 },
   stepQty:         { fontSize: 13, fontWeight: '700', color: '#111827', minWidth: 20, textAlign: 'center' },
   historyQty:      { fontSize: 12, fontWeight: '700', color: '#9CA3AF' },
-  syncBtn:         { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  syncBtn:         { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
   syncBtnText:     { fontSize: 10, fontWeight: '600', color: '#9CA3AF' },
   reAddBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' },
   reAddText:       { fontSize: 11, fontWeight: '700', color: PRIMARY },
   // Store row
-  storeRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' },
-  storeRowMain:    { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingLeft: 12, paddingRight: 8, gap: 8 },
-  storeAddBtn:     { width: 44, height: '100%' as any, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: '#F3F4F6' },
+  storeRow:        { flexDirection: 'row', alignItems: 'stretch', backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' },
+  storeRowMain:    { flex: 1, paddingVertical: 10, paddingLeft: 12, paddingRight: 8, gap: 3, justifyContent: 'center' },
+  storeAddBtn:     { width: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: '#F3F4F6' },
   // Add bar
   addBar:          { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12, backgroundColor: 'transparent' },
   addBarBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
@@ -875,10 +881,7 @@ const badge = StyleSheet.create({
 });
 
 const ftag = StyleSheet.create({
-  wrap:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  dot:    { width: 7, height: 7, borderRadius: 4 },
-  status: { fontSize: 11, fontWeight: '700', lineHeight: 14 },
-  fresh:  { fontSize: 10, color: '#9CA3AF', lineHeight: 13 },
+  line: { fontSize: 11, lineHeight: 15 },
 });
 
 const dot = StyleSheet.create({
