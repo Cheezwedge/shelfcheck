@@ -175,3 +175,79 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   }
   return data as Profile;
 }
+
+// ─── Admin functions ──────────────────────────────────────────────────────────
+
+export interface AdminItem {
+  id: string;
+  store_id: string;
+  name: string;
+  category: string;
+  report_count: number;
+  status: string | null;
+  last_reported_at: string | null;
+}
+
+/** Fetch all items for a store with their report counts (admin view). */
+export async function fetchAdminItems(storeId: string): Promise<AdminItem[]> {
+  const { data, error } = await supabase
+    .from('items_with_status')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('name');
+  if (error) throw error;
+
+  // Count reports per item
+  const ids = (data as any[]).map((r) => r.id);
+  const { data: counts } = await supabase
+    .from('reports')
+    .select('item_id')
+    .in('item_id', ids);
+  const countMap = new Map<string, number>();
+  (counts ?? []).forEach((r: { item_id: string }) => {
+    countMap.set(r.item_id, (countMap.get(r.item_id) ?? 0) + 1);
+  });
+
+  return (data as any[]).map((r) => ({
+    id: r.id,
+    store_id: r.store_id,
+    name: r.name,
+    category: r.category,
+    report_count: countMap.get(r.id) ?? 0,
+    status: r.status ?? null,
+    last_reported_at: r.last_reported_at ?? null,
+  }));
+}
+
+/** Rename an item (admin only — enforced by RLS). */
+export async function renameItem(itemId: string, newName: string): Promise<void> {
+  const normalized = newName.trim().replace(/\s+/g, ' ');
+  const { error } = await supabase
+    .from('items')
+    .update({ name: normalized })
+    .eq('id', itemId);
+  if (error) throw error;
+}
+
+/**
+ * Delete an item and all its reports (admin only).
+ * Deletes reports first to avoid FK constraint issues.
+ */
+export async function deleteItem(itemId: string): Promise<void> {
+  const { error: rErr } = await supabase.from('reports').delete().eq('item_id', itemId);
+  if (rErr) throw rErr;
+  const { error } = await supabase.from('items').delete().eq('id', itemId);
+  if (error) throw error;
+}
+
+/**
+ * Merge dropId into keepId: re-points all reports then deletes the duplicate.
+ * Uses the server-side admin_merge_items() function for atomicity.
+ */
+export async function mergeItems(keepId: string, dropId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_merge_items', {
+    keep_id: keepId,
+    drop_id: dropId,
+  });
+  if (error) throw error;
+}

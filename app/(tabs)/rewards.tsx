@@ -131,7 +131,7 @@ function BadgeCard({ badge, unlocked }: { badge: Badge; unlocked: boolean }) {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function RewardsScreen() {
   const router = useRouter();
-  const { session, isGuest } = useAuth();
+  const { session, isGuest, isAdmin } = useAuth();
   const reportingId = getReportingUserId(session);
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -357,6 +357,15 @@ export default function RewardsScreen() {
           })}
         </View>
 
+        {/* Admin panel link — only visible to admins */}
+        {isAdmin && (
+          <TouchableOpacity style={styles.adminBtn} onPress={() => router.push('/admin')} activeOpacity={0.8}>
+            <Ionicons name="shield-checkmark" size={16} color="#6D28D9" />
+            <Text style={styles.adminBtnText}>Item Admin Panel</Text>
+            <Ionicons name="chevron-forward" size={14} color="#6D28D9" />
+          </TouchableOpacity>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -451,6 +460,10 @@ const styles = StyleSheet.create({
   redeemBtnDisabled:  { backgroundColor: '#E5E7EB' },
   redeemBtnText:      { fontSize: 13, fontWeight: '700', color: '#fff' },
   redeemBtnTextDisabled: { color: '#9CA3AF' },
+
+  // Admin
+  adminBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F5F3FF', borderRadius: 12, padding: 14, marginTop: 8, borderWidth: 1, borderColor: '#DDD6FE' },
+  adminBtnText:  { flex: 1, fontSize: 14, fontWeight: '700', color: '#6D28D9' },
 });
 
 const bc = StyleSheet.create({

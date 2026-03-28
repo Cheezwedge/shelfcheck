@@ -8,6 +8,7 @@ interface AuthContextValue {
   session: Session | null;
   user: User | null;
   isGuest: boolean;
+  isAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
@@ -19,18 +20,31 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  async function loadAdminFlag(uid: string) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', uid)
+      .maybeSingle();
+    setIsAdmin(data?.is_admin === true);
+  }
 
   useEffect(() => {
     // Restore existing session from localStorage on mount
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (data.session?.user.id) loadAdminFlag(data.session.user.id);
       setLoading(false);
     });
 
     // Keep session state in sync
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      if (newSession?.user.id) loadAdminFlag(newSession.user.id);
+      else setIsAdmin(false);
     });
 
     return () => { listener.subscription.unsubscribe(); };
@@ -75,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     user: session?.user ?? null,
     isGuest: session === null,
+    isAdmin,
     loading,
     signIn,
     signUp,
