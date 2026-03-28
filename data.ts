@@ -12,6 +12,30 @@ export const STATUS_LABELS: Record<StockStatus, string> = {
   'uncertain':    'Uncertain',
 };
 
+// ── Report freshness ──────────────────────────────────────────────────────────
+
+export type FreshnessLevel = 'now' | 'fresh' | 'aging' | 'stale' | 'old' | 'none';
+
+export interface Freshness {
+  level: FreshnessLevel;
+  label: string;  // e.g. "Just now", "Fresh", "Aging"
+  symbol: string; // e.g. "✓", "~", "⚠", "?"
+  color: string;  // color for the freshness label text
+}
+
+export function getFreshness(lastReportedAt: string | null): Freshness {
+  if (!lastReportedAt) return { level: 'none',   label: 'No data', symbol: '?', color: '#D1D5DB' };
+  const mins = (Date.now() - new Date(lastReportedAt).getTime()) / 60_000;
+  const hrs  = mins / 60;
+  const days = hrs  / 24;
+  if (mins < 60)  return { level: 'now',    label: 'Just now', symbol: '✓', color: '#1D9E75' };
+  if (hrs  < 4)   return { level: 'fresh',  label: 'Fresh',    symbol: '✓', color: '#1D9E75' };
+  if (hrs  < 12)  return { level: 'aging',  label: 'Aging',    symbol: '~', color: '#F59E0B' };
+  if (days < 2)   return { level: 'stale',  label: 'Stale',    symbol: '⚠', color: '#9CA3AF' };
+  if (days < 7)   return { level: 'old',    label: 'Old',      symbol: '?', color: '#D1D5DB' };
+  return                  { level: 'old',    label: 'Expired',  symbol: '×', color: '#D1D5DB' };
+}
+
 /**
  * Converts an ISO timestamp (or null) into a human-readable relative string.
  * null means the item has never been reported — shown as "No reports yet".

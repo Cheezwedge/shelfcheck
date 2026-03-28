@@ -74,13 +74,14 @@ export async function fetchStoreName(storeId = DEFAULT_STORE_ID): Promise<string
  */
 export async function submitReport(
   itemId: string,
-  storeId: string,
   status: Extract<StockStatus, 'in-stock' | 'out-of-stock'>,
   userId: string
 ): Promise<string> {
+  // store_id is omitted: the DB BEFORE INSERT trigger fills it automatically
+  // from items.store_id once migration 002 is applied.
   const { data, error } = await supabase
     .from('reports')
-    .insert({ item_id: itemId, store_id: storeId, status, user_id: userId })
+    .insert({ item_id: itemId, status, user_id: userId })
     .select('id')
     .single();
 

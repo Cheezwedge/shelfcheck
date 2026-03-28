@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StockStatus, STATUS_COLORS, STATUS_LABELS, formatTimeAgo } from '../../data';
+import { StockStatus, STATUS_COLORS, STATUS_LABELS, formatTimeAgo, getFreshness } from '../../data';
 import { fetchItems, upsertItem, upsertStore, DEFAULT_STORE_ID } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
@@ -531,12 +531,7 @@ export default function ShopScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.rowBody} onPress={() => handleReportActive(item)} activeOpacity={0.7} disabled={isReporting}>
             <Text style={styles.rowName} numberOfLines={1}>{item.list.name}</Text>
-            <View style={styles.rowMeta}>
-              <Text style={styles.rowCat}>{item.list.category}</Text>
-              {item.live?.lastReportedAt ? (
-                <Text style={styles.rowTime}> · {formatTimeAgo(item.live.lastReportedAt)}</Text>
-              ) : null}
-            </View>
+            <Text style={styles.rowCat}>{item.list.category}</Text>
           </TouchableOpacity>
           <View style={styles.stepper}>
             <TouchableOpacity
@@ -555,7 +550,7 @@ export default function ShopScreen() {
           {isReporting ? (
             <ActivityIndicator size="small" color={PRIMARY} style={{ width: 22 }} />
           ) : status ? (
-            <RowStatusDot status={status} />
+            <FreshnessTag status={status} lastReportedAt={item.live?.lastReportedAt ?? null} />
           ) : (
             // No Supabase record yet — tapping syncs the item and opens reporting
             <TouchableOpacity
@@ -584,14 +579,9 @@ export default function ShopScreen() {
           >
             <View style={styles.rowBody}>
               <Text style={styles.rowName} numberOfLines={1}>{item.live.name}</Text>
-              <View style={styles.rowMeta}>
-                <Text style={styles.rowCat}>{item.live.category}</Text>
-                {item.live.lastReportedAt ? (
-                  <Text style={styles.rowTime}> · {formatTimeAgo(item.live.lastReportedAt)}</Text>
-                ) : null}
-              </View>
+              <Text style={styles.rowCat}>{item.live.category}</Text>
             </View>
-            <StatusBadge status={item.live.status} />
+            <FreshBadge status={item.live.status} lastReportedAt={item.live.lastReportedAt} />
             <Ionicons name="chevron-forward" size={14} color="#D1D5DB" />
           </TouchableOpacity>
           <TouchableOpacity
@@ -767,26 +757,40 @@ export default function ShopScreen() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: StockStatus }) {
-  const color = STATUS_COLORS[status];
-  const label = STATUS_LABELS[status];
+
+/** Two-line tag used on active list rows: status label + freshness below it. */
+function FreshnessTag({ status, lastReportedAt }: { status: StockStatus; lastReportedAt: string | null }) {
+  const statusColor = STATUS_COLORS[status];
+  const statusLabel = STATUS_LABELS[status];
+  const f = getFreshness(lastReportedAt);
   return (
-    <View style={[badge.wrap, { backgroundColor: color + '18', borderColor: color + '40' }]}>
-      <View style={[badge.dot, { backgroundColor: color }]} />
-      <Text style={[badge.text, { color }]}>{label}</Text>
+    <View style={ftag.wrap}>
+      <View style={[ftag.dot, { backgroundColor: statusColor }]} />
+      <View>
+        <Text style={[ftag.status, { color: statusColor }]}>{statusLabel}</Text>
+        <Text style={[ftag.fresh, { color: f.color }]}>{f.symbol} {f.label}</Text>
+      </View>
     </View>
   );
 }
 
-function RowStatusDot({ status }: { status: StockStatus }) {
-  const color = STATUS_COLORS[status];
+/** Pill badge used on AT THIS STORE rows: status + freshness on two lines. */
+function FreshBadge({ status, lastReportedAt }: { status: StockStatus; lastReportedAt: string | null }) {
+  const statusColor = STATUS_COLORS[status];
+  const statusLabel = STATUS_LABELS[status];
+  const f = getFreshness(lastReportedAt);
   return (
-    <View style={[dot.wrap, { borderColor: color + '60', backgroundColor: color + '18' }]}>
-      <View style={[dot.circle, { backgroundColor: color }]} />
+    <View style={[badge.wrap, { backgroundColor: statusColor + '14', borderColor: statusColor + '35' }]}>
+      <View style={[badge.dot, { backgroundColor: statusColor }]} />
+      <View>
+        <Text style={[badge.statusText, { color: statusColor }]}>{statusLabel}</Text>
+        <Text style={[badge.freshText, { color: f.color }]}>{f.symbol} {f.label}</Text>
+      </View>
     </View>
   );
 }
 
+/** Small dot used in the AddSheet list. */
 function SheetStatusDot({ status }: { status: StockStatus }) {
   const color = STATUS_COLORS[status];
   return (
@@ -856,9 +860,19 @@ const styles = StyleSheet.create({
 });
 
 const badge = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, gap: 4 },
-  dot:  { width: 6, height: 6, borderRadius: 3 },
-  text: { fontSize: 11, fontWeight: '700' },
+  wrap:       { flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, gap: 5 },
+  dot:        { width: 7, height: 7, borderRadius: 4, marginTop: 2 },
+  statusText: { fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  freshText:  { fontSize: 10, fontWeight: '500', lineHeight: 13 },
+  // legacy
+  text:       { fontSize: 11, fontWeight: '700' },
+});
+
+const ftag = StyleSheet.create({
+  wrap:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dot:    { width: 7, height: 7, borderRadius: 4 },
+  status: { fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  fresh:  { fontSize: 10, color: '#9CA3AF', lineHeight: 13 },
 });
 
 const dot = StyleSheet.create({
