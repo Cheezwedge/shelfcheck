@@ -22,6 +22,7 @@ const PHOTO_BONUS = 15;
 export default function ReportScreen() {
   const { id, name: paramName, category: paramCategory, storeId: paramStoreId, storeName: paramStoreName } =
     useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string; storeName?: string }>();
+  const currentStoreId = paramStoreId ?? null;
   const router = useRouter();
   const { session } = useAuth();
 
@@ -60,7 +61,7 @@ export default function ReportScreen() {
     if (!selected || !item) return;
     setSubmitting(true);
     try {
-      await submitReport(item.id, selected, getReportingUserId(session), quantityEstimate);
+      await submitReport(item.id, selected, getReportingUserId(session), quantityEstimate, currentStoreId);
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {

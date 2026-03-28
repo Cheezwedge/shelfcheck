@@ -479,9 +479,13 @@ export default function ShopScreen() {
   }
 
   async function handleReportActive(row: ActiveRow) {
+    const currentStoreId = selectedStore?.supabaseId ?? '';
     // Fast path: item already linked to Supabase
     if (row.live) {
-      router.push(`/report/${row.live.id}`);
+      router.push({
+        pathname: '/report/[id]',
+        params: { id: row.live.id, storeId: currentStoreId },
+      });
       return;
     }
 
@@ -491,7 +495,6 @@ export default function ShopScreen() {
     try {
       const sid = await ensureStoreId();
       if (!sid) {
-        // Store truly can't be created — navigate to /report/new which shows a clear message
         router.push({
           pathname: '/report/[id]',
           params: { id: 'new', name: row.list.name, category: row.list.category, storeId: '', storeName: selectedStore?.name ?? '' },
@@ -499,13 +502,15 @@ export default function ShopScreen() {
         return;
       }
       const itemId = await upsertItem(sid, row.list.name, row.list.category);
-      // Refresh store items in background so the status dot updates
       fetchItems(sid).then(setStoreItems).catch(() => {});
-      router.push(`/report/${itemId}`);
+      router.push({
+        pathname: '/report/[id]',
+        params: { id: itemId, storeId: sid },
+      });
     } catch {
       router.push({
         pathname: '/report/[id]',
-        params: { id: 'new', name: row.list.name, category: row.list.category, storeId: selectedStore?.supabaseId ?? '', storeName: selectedStore?.name ?? '' },
+        params: { id: 'new', name: row.list.name, category: row.list.category, storeId: currentStoreId, storeName: selectedStore?.name ?? '' },
       });
     } finally {
       setReportingListId(null);
@@ -583,7 +588,7 @@ export default function ShopScreen() {
         <View style={styles.storeRow}>
           <TouchableOpacity
             style={styles.storeRowMain}
-            onPress={() => router.push(`/report/${item.live.id}`)}
+            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.live.id, storeId: selectedStore?.supabaseId ?? '' } })}
             activeOpacity={0.7}
           >
             <Text style={styles.rowName} numberOfLines={2}>{item.live.name}</Text>

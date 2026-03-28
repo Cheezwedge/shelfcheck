@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { ItemRow, LiveItem } from './types';
 import type { StockStatus } from '../data';
+import { matchChain, CHAINS } from './stores';
 
 /**
  * The seeded store ID. In a multi-store version this becomes a
@@ -12,7 +13,8 @@ export const DEFAULT_STORE_ID = 'a1b2c3d4-0000-0000-0000-000000000001';
 function toLocalItem(row: ItemRow): LiveItem {
   return {
     id: row.id,
-    storeId: row.store_id,
+    chainId: row.chain_id ?? null,
+    storeId: row.store_id ?? null,
     name: row.name,
     category: row.category,
     status: row.status ?? 'uncertain',
@@ -22,15 +24,13 @@ function toLocalItem(row: ItemRow): LiveItem {
 }
 
 /**
- * Fetch all items for the default store with their current status.
- * Reads from the `items_with_status` Postgres view.
+ * Fetch all items for a store with their current status at that location.
+ * Uses the fetch_store_items() RPC which returns the chain-level catalog
+ * filtered by the store's chain, with status from reports at this location only.
  */
 export async function fetchItems(storeId = DEFAULT_STORE_ID): Promise<LiveItem[]> {
   const { data, error } = await supabase
-    .from('items_with_status')
-    .select('*')
-    .eq('store_id', storeId)
-    .order('name');
+    .rpc('fetch_store_items', { p_store_id: storeId });
 
   if (error) throw error;
   return (data as ItemRow[]).map(toLocalItem);
@@ -77,12 +77,14 @@ export async function submitReport(
   itemId: string,
   status: Extract<StockStatus, 'in-stock' | 'out-of-stock'>,
   userId: string,
-  quantity?: number | null
+  quantity?: number | null,
+  storeId?: string | null
 ): Promise<string> {
-  // store_id is omitted: the DB BEFORE INSERT trigger fills it automatically
-  // from items.store_id once migration 002 is applied.
   const payload: Record<string, unknown> = { item_id: itemId, status, user_id: userId };
   if (quantity != null) payload.quantity = quantity;
+  // Pass store_id explicitly so reports are tied to the correct location.
+  // The DB trigger fills it as a fallback if omitted.
+  if (storeId) payload.store_id = storeId;
   const { data, error } = await supabase
     .from('reports')
     .insert(payload)
@@ -94,8 +96,9 @@ export async function submitReport(
 }
 
 /**
- * Find or create an item for a store. Used when a grocery-list item has no
- * Supabase record yet and the user wants to submit a first report.
+ * Find or create an item. In the chain model, items belong to a chain so the
+ * same item is shared across all locations of that chain. Falls back to
+ * store-scoped items if the store has no chain set.
  * Returns the item's id.
  */
 export async function upsertItem(
@@ -103,36 +106,58 @@ export async function upsertItem(
   name: string,
   category: string
 ): Promise<string> {
-  // Normalize: collapse internal whitespace and trim edges so "Whole  Milk " ≡ "Whole Milk"
   const normalized = name.trim().replace(/\s+/g, ' ');
 
-  // Look for an existing item with the same name in this store (case-insensitive)
+  // Get this store's chain_id
+  const { data: storeRow } = await supabase
+    .from('stores')
+    .select('chain_id')
+    .eq('id', storeId)
+    .maybeSingle();
+  const chainId = (storeRow as any)?.chain_id as string | null;
+
+  if (chainId) {
+    // Dedup across the whole chain — "Whole Milk" at any Ralphs = same item
+    const { data: existing } = await supabase
+      .from('items')
+      .select('id')
+      .eq('chain_id', chainId)
+      .ilike('name', normalized)
+      .maybeSingle();
+    if (existing?.id) return existing.id as string;
+
+    const { data, error } = await supabase
+      .from('items')
+      .insert({ chain_id: chainId, store_id: storeId, name: normalized, category })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return (data as { id: string }).id;
+  }
+
+  // Fallback: store-scoped item (store has no chain match)
   const { data: existing } = await supabase
     .from('items')
     .select('id')
     .eq('store_id', storeId)
     .ilike('name', normalized)
     .maybeSingle();
-
   if (existing?.id) return existing.id as string;
 
-  // Create new item (store the normalized name to keep the DB tidy)
   const { data, error } = await supabase
     .from('items')
     .insert({ store_id: storeId, name: normalized, category })
     .select('id')
     .single();
-
   if (error) throw error;
   return (data as { id: string }).id;
 }
 
 /**
- * Find or create a store by name. Used when an OSM-selected store has no
- * Supabase record yet. Returns the store's id.
+ * Find or create a store by name. Sets chain_id so the store's items
+ * come from the shared chain catalog. Returns the store's id.
  */
 export async function upsertStore(name: string): Promise<string> {
-  // Try to find by first keyword (matches "Ralphs", "Vons", etc.)
   const keyword = name.split(/\s+/)[0];
   const { data: existing } = await supabase
     .from('stores')
@@ -142,10 +167,24 @@ export async function upsertStore(name: string): Promise<string> {
     .maybeSingle();
   if (existing?.id) return existing.id as string;
 
-  // Create a new store entry
+  // Resolve chain_id from store name
+  const chainKey = matchChain(name);
+  let chainId: string | null = null;
+  if (chainKey) {
+    const chainLabel = CHAINS.find((c) => c.key === chainKey)?.label ?? null;
+    if (chainLabel) {
+      const { data: chain } = await supabase
+        .from('chains')
+        .select('id')
+        .eq('name', chainLabel)
+        .maybeSingle();
+      chainId = (chain as any)?.id ?? null;
+    }
+  }
+
   const { data, error } = await supabase
     .from('stores')
-    .insert({ name })
+    .insert({ name, chain_id: chainId })
     .select('id')
     .single();
   if (error) throw error;
