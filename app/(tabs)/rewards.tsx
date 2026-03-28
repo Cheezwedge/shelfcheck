@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Modal,
   ScrollView,
   SafeAreaView,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
+
+const FEATURED_KEY = 'shelfcheck:featured_badge';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { fetchProfile, type Profile } from '../../lib/api';
@@ -107,14 +110,27 @@ function GlowBadge({ badge, size = 72 }: { badge: Badge; size?: number }) {
 }
 
 // ─── Small badge card for grid ────────────────────────────────────────────────
-function BadgeCard({ badge, unlocked }: { badge: Badge; unlocked: boolean }) {
+function BadgeCard({
+  badge, unlocked, isFeatured, onPress,
+}: {
+  badge: Badge; unlocked: boolean; isFeatured: boolean; onPress: () => void;
+}) {
   return (
-    <View style={[bc.card, { borderColor: unlocked ? badge.color + '40' : '#E5E7EB' }, !unlocked && bc.locked]}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={[bc.card, { borderColor: unlocked ? badge.color + '40' : '#E5E7EB' }, !unlocked && bc.locked, isFeatured && { borderColor: badge.color, borderWidth: 2 }]}
+    >
       <View style={[bc.iconBox, { backgroundColor: unlocked ? badge.bg : '#F3F4F6' }]}>
         <Ionicons name={badge.icon as any} size={22} color={unlocked ? badge.color : '#D1D5DB'} />
         {!unlocked && (
           <View style={bc.lockDot}>
             <Ionicons name="lock-closed" size={9} color="#9CA3AF" />
+          </View>
+        )}
+        {isFeatured && (
+          <View style={bc.featuredDot}>
+            <Ionicons name="star" size={8} color="#fff" />
           </View>
         )}
       </View>
@@ -124,7 +140,76 @@ function BadgeCard({ badge, unlocked }: { badge: Badge; unlocked: boolean }) {
           {RARITY_LABELS[badge.rarity]}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Badge detail / preview modal ─────────────────────────────────────────────
+function BadgeDetailModal({
+  badge,
+  unlocked,
+  isFeatured,
+  onSetFeatured,
+  onClose,
+}: {
+  badge: Badge;
+  unlocked: boolean;
+  isFeatured: boolean;
+  onSetFeatured: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={md.backdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={md.card}>
+          {/* Badge preview */}
+          <View style={[md.badgeBg, { backgroundColor: unlocked ? badge.bg : '#F3F4F6' }]}>
+            <GlowBadge badge={unlocked ? badge : { ...badge, animated: false }} size={88} />
+          </View>
+
+          {/* Rarity pill */}
+          <View style={[md.rarityPill, { backgroundColor: RARITY_COLORS[badge.rarity] + '20' }]}>
+            <View style={[md.rarityDot, { backgroundColor: RARITY_COLORS[badge.rarity] }]} />
+            <Text style={[md.rarityText, { color: RARITY_COLORS[badge.rarity] }]}>
+              {RARITY_LABELS[badge.rarity]}
+            </Text>
+          </View>
+
+          <Text style={md.title}>{badge.title}</Text>
+          <Text style={md.description}>{badge.description}</Text>
+
+          {/* Requirement */}
+          <View style={[md.requireBox, unlocked && md.requireBoxEarned]}>
+            <Ionicons
+              name={unlocked ? 'checkmark-circle' : 'lock-closed-outline'}
+              size={15}
+              color={unlocked ? '#1D9E75' : '#9CA3AF'}
+            />
+            <Text style={[md.requireText, unlocked && md.requireTextEarned]}>
+              {unlocked ? 'Earned · ' : 'How to unlock: '}{badge.requirement}
+            </Text>
+          </View>
+
+          {/* Actions */}
+          <View style={md.actions}>
+            <TouchableOpacity style={md.closeBtn} onPress={onClose}>
+              <Text style={md.closeBtnText}>Close</Text>
+            </TouchableOpacity>
+            {unlocked && (
+              <TouchableOpacity
+                style={[md.setBtn, { backgroundColor: isFeatured ? '#6B7280' : badge.color }]}
+                onPress={() => { onSetFeatured(); onClose(); }}
+              >
+                <Ionicons name={isFeatured ? 'star' : 'star-outline'} size={14} color="#fff" />
+                <Text style={md.setBtnText}>
+                  {isFeatured ? 'Current Avatar' : 'Set as Avatar'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -134,8 +219,12 @@ export default function RewardsScreen() {
   const { session, isGuest, isAdmin } = useAuth();
   const reportingId = getReportingUserId(session);
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile]             = useState<Profile | null>(null);
+  const [loading, setLoading]             = useState(true);
+  const [previewBadge, setPreviewBadge]   = useState<Badge | null>(null);
+  const [featuredBadgeId, setFeaturedBadgeId] = useState<string | null>(() => {
+    try { return localStorage.getItem(FEATURED_KEY); } catch { return null; }
+  });
 
   const load = useCallback(async () => {
     try {
@@ -168,12 +257,20 @@ export default function RewardsScreen() {
   const levelInfo     = getLevelInfo(points);
   const progress      = levelInfo.next > 0 ? Math.min(points / levelInfo.next, 1) : 1;
 
-  const earned   = earnedBadges({ reports_count: reportsCount, accuracy_ratio: accuracyRatio, streak_days: streakDays, joined_at: joinedAt });
-  const featured = featuredBadge(earned);
-  const title    = profileTitle(earned);
-  const cardColor = heroColor(earned);
-
+  const earned    = earnedBadges({ reports_count: reportsCount, accuracy_ratio: accuracyRatio, streak_days: streakDays, joined_at: joinedAt });
   const earnedIds = new Set(earned.map((b) => b.id));
+
+  // Use the user's chosen badge if it's still earned, otherwise fall back to highest-rarity
+  const featured  = (featuredBadgeId && earnedIds.has(featuredBadgeId))
+    ? ALL_BADGES.find((b) => b.id === featuredBadgeId) ?? featuredBadge(earned)
+    : featuredBadge(earned);
+  const title     = featured?.title ?? 'New Member';
+  const cardColor = heroColor(featured ? [featured, ...earned.filter(b => b.id !== featured.id)] : earned);
+
+  function handleSetFeatured(badgeId: string) {
+    setFeaturedBadgeId(badgeId);
+    try { localStorage.setItem(FEATURED_KEY, badgeId); } catch {}
+  }
 
   // Sort ALL_BADGES: earned first, then by rarity
   const sortedBadges = [...ALL_BADGES].sort((a, b) => {
@@ -198,8 +295,16 @@ export default function RewardsScreen() {
             {loading ? (
               <ActivityIndicator color="#fff" size="large" />
             ) : featured ? (
-              <View style={styles.featuredRow}>
-                <GlowBadge badge={featured} size={64} />
+              <TouchableOpacity style={styles.featuredRow} onPress={() => setPreviewBadge(featured)} activeOpacity={0.8}>
+                <View>
+                  <GlowBadge badge={featured} size={64} />
+                  {earned.length > 1 && (
+                    <View style={styles.changeHint}>
+                      <Ionicons name="swap-horizontal" size={9} color="rgba(255,255,255,0.8)" />
+                      <Text style={styles.changeHintText}>tap to change</Text>
+                    </View>
+                  )}
+                </View>
                 <View style={styles.featuredText}>
                   <Text style={styles.featuredTitle}>{title}</Text>
                   <View style={styles.featuredRarityRow}>
@@ -211,7 +316,7 @@ export default function RewardsScreen() {
                     <Text style={styles.featuredDesc} numberOfLines={2}>{featured.description}</Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             ) : (
               <View style={styles.featuredRow}>
                 <View style={styles.noFeaturedIcon}>
@@ -293,7 +398,13 @@ export default function RewardsScreen() {
         <Text style={styles.sectionTitle}>Badges</Text>
         <View style={styles.badgeGrid}>
           {sortedBadges.map((b) => (
-            <BadgeCard key={b.id} badge={b} unlocked={earnedIds.has(b.id)} />
+            <BadgeCard
+              key={b.id}
+              badge={b}
+              unlocked={earnedIds.has(b.id)}
+              isFeatured={featuredBadgeId === b.id || (!featuredBadgeId && featured?.id === b.id)}
+              onPress={() => setPreviewBadge(b)}
+            />
           ))}
         </View>
 
@@ -368,6 +479,17 @@ export default function RewardsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Badge preview / avatar picker modal */}
+      {previewBadge && (
+        <BadgeDetailModal
+          badge={previewBadge}
+          unlocked={earnedIds.has(previewBadge.id)}
+          isFeatured={featuredBadgeId === previewBadge.id || (!featuredBadgeId && featured?.id === previewBadge.id)}
+          onSetFeatured={() => handleSetFeatured(previewBadge.id)}
+          onClose={() => setPreviewBadge(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -461,18 +583,43 @@ const styles = StyleSheet.create({
   redeemBtnText:      { fontSize: 13, fontWeight: '700', color: '#fff' },
   redeemBtnTextDisabled: { color: '#9CA3AF' },
 
+  // Featured badge change hint
+  changeHint:      { flexDirection: 'row', alignItems: 'center', gap: 3, justifyContent: 'center', marginTop: 2 },
+  changeHintText:  { fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+
   // Admin
   adminBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F5F3FF', borderRadius: 12, padding: 14, marginTop: 8, borderWidth: 1, borderColor: '#DDD6FE' },
   adminBtnText:  { flex: 1, fontSize: 14, fontWeight: '700', color: '#6D28D9' },
 });
 
 const bc = StyleSheet.create({
-  card:     { width: '31%', backgroundColor: '#fff', borderRadius: 14, padding: 11, alignItems: 'center', gap: 5, borderWidth: 1 },
-  locked:   { opacity: 0.5 },
-  iconBox:  { width: 46, height: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  lockDot:  { position: 'absolute', bottom: -2, right: -2, backgroundColor: '#E5E7EB', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
-  name:     { fontSize: 11, fontWeight: '700', color: '#111827', textAlign: 'center' },
+  card:       { width: '31%', backgroundColor: '#fff', borderRadius: 14, padding: 11, alignItems: 'center', gap: 5, borderWidth: 1 },
+  locked:     { opacity: 0.5 },
+  iconBox:    { width: 46, height: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  lockDot:    { position: 'absolute', bottom: -2, right: -2, backgroundColor: '#E5E7EB', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
+  featuredDot:{ position: 'absolute', top: -2, right: -2, backgroundColor: '#F59E0B', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
+  name:       { fontSize: 11, fontWeight: '700', color: '#111827', textAlign: 'center' },
   nameLocked: { color: '#9CA3AF' },
   rarityPill: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
   rarityText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' as any },
+});
+
+const md = StyleSheet.create({
+  backdrop:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card:           { backgroundColor: '#fff', borderRadius: 24, padding: 24, width: '100%', maxWidth: 380, alignItems: 'center', gap: 12 },
+  badgeBg:        { width: 140, height: 140, borderRadius: 70, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  rarityPill:     { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  rarityDot:      { width: 7, height: 7, borderRadius: 4 },
+  rarityText:     { fontSize: 12, fontWeight: '700' },
+  title:          { fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center' },
+  description:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  requireBox:     { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#F3F4F6', borderRadius: 10, padding: 12, width: '100%' },
+  requireBoxEarned: { backgroundColor: '#ECFDF5' },
+  requireText:    { flex: 1, fontSize: 12, color: '#6B7280', lineHeight: 17 },
+  requireTextEarned: { color: '#065F46' },
+  actions:        { flexDirection: 'row', gap: 10, width: '100%', marginTop: 4 },
+  closeBtn:       { flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 12 },
+  closeBtnText:   { fontSize: 14, fontWeight: '600', color: '#6B7280' },
+  setBtn:         { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 12 },
+  setBtnText:     { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

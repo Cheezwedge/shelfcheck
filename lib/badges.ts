@@ -6,11 +6,12 @@ export interface Badge {
   id: string;
   title: string;
   description: string;
-  icon: string;       // Ionicons name
-  color: string;      // primary accent color
-  bg: string;         // card background tint
+  requirement: string;  // how to unlock, shown in preview
+  icon: string;
+  color: string;
+  bg: string;
   rarity: Rarity;
-  animated?: boolean; // pulsing glow ring on featured display
+  animated?: boolean;
 }
 
 // Sorted by display order (rarity desc within each theme)
@@ -19,7 +20,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'founding_reporter',
     title: 'Founding Reporter',
-    description: 'Joined ShelfCheck in its first year',
+    description: 'One of the original ShelfCheck contributors',
+    requirement: 'Awarded to anyone who joined before 2027. Cannot be earned after launch year.',
     icon: 'leaf',
     color: '#F59E0B',
     bg: '#FFFBEB',
@@ -31,7 +33,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'first_step',
     title: 'First Step',
-    description: 'Submitted your first report',
+    description: 'Submitted your first stock report',
+    requirement: 'Submit 1 report.',
     icon: 'footsteps',
     color: '#9CA3AF',
     bg: '#F9FAFB',
@@ -40,7 +43,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'scout',
     title: 'Scout',
-    description: '10 confirmed reports',
+    description: 'A regular contributor to the community',
+    requirement: 'Submit 10 confirmed reports.',
     icon: 'search',
     color: '#3B82F6',
     bg: '#EFF6FF',
@@ -49,7 +53,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'tracker',
     title: 'Tracker',
-    description: '50 confirmed reports',
+    description: 'A dedicated shelf-checker',
+    requirement: 'Submit 50 confirmed reports.',
     icon: 'navigate',
     color: '#8B5CF6',
     bg: '#F5F3FF',
@@ -58,7 +63,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'field_expert',
     title: 'Field Expert',
-    description: '200 confirmed reports',
+    description: 'An expert in the field',
+    requirement: 'Submit 200 confirmed reports.',
     icon: 'star',
     color: '#F59E0B',
     bg: '#FFFBEB',
@@ -67,7 +73,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'legend',
     title: 'Legend',
-    description: '500 confirmed reports',
+    description: 'A ShelfCheck legend — top of the community',
+    requirement: 'Submit 500 confirmed reports.',
     icon: 'trophy',
     color: '#EF4444',
     bg: '#FEF2F2',
@@ -79,7 +86,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'truth_teller',
     title: 'Truth Teller',
-    description: '90%+ accuracy over 25 reports',
+    description: 'Consistently accurate reports',
+    requirement: 'Maintain 90%+ accuracy across at least 25 reports.',
     icon: 'checkmark-circle',
     color: '#1D9E75',
     bg: '#ECFDF5',
@@ -88,7 +96,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'oracle',
     title: 'Oracle',
-    description: '95%+ accuracy over 100 reports',
+    description: 'Near-perfect accuracy — the community trusts you',
+    requirement: 'Maintain 95%+ accuracy across at least 100 reports.',
     icon: 'eye',
     color: '#06B6D4',
     bg: '#ECFEFF',
@@ -100,7 +109,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'on_a_roll',
     title: 'On a Roll',
-    description: '7-day reporting streak',
+    description: 'Reported every day for a full week',
+    requirement: 'Maintain a 7-day reporting streak.',
     icon: 'flame',
     color: '#F97316',
     bg: '#FFF7ED',
@@ -109,7 +119,8 @@ export const ALL_BADGES: Badge[] = [
   {
     id: 'unstoppable',
     title: 'Unstoppable',
-    description: '30-day reporting streak',
+    description: 'A month of daily contributions',
+    requirement: 'Maintain a 30-day reporting streak.',
     icon: 'thunderstorm',
     color: '#EF4444',
     bg: '#FEF2F2',
