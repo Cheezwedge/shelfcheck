@@ -507,11 +507,16 @@ export default function ShopScreen() {
         pathname: '/report/[id]',
         params: { id: itemId, storeId: sid },
       });
-    } catch {
-      router.push({
-        pathname: '/report/[id]',
-        params: { id: 'new', name: row.list.name, category: row.list.category, storeId: currentStoreId, storeName: selectedStore?.name ?? '' },
-      });
+    } catch (err: unknown) {
+      // upsertStore or upsertItem failed (usually RLS). Show an informative alert
+      // instead of navigating to the misleading "Store not in database" screen.
+      const code = (err as any)?.code ?? '';
+      const msg  = (err as any)?.message ?? String(err);
+      Alert.alert(
+        'Couldn\'t sync item',
+        `Unable to add "${row.list.name}" to the store database.\n\n${code ? `[${code}] ` : ''}${msg}\n\nTry again in a moment.`,
+        [{ text: 'OK' }],
+      );
     } finally {
       setReportingListId(null);
     }
