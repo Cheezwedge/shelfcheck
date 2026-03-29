@@ -292,7 +292,7 @@ function AddSheet({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ShopScreen() {
   const router = useRouter();
-  const { isGuest } = useAuth();
+  const { isGuest, session } = useAuth();
 
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
@@ -448,7 +448,7 @@ export default function ShopScreen() {
     try {
       const storeSid = await ensureStoreId();
       if (!storeSid) return; // no store name at all — nothing to sync
-      await upsertItem(storeSid, name, category || 'General');
+      await upsertItem(storeSid, name, category || 'General', session?.user.id);
       // Refresh so the item's status dot appears immediately
       const fresh = await fetchItems(storeSid);
       setStoreItems(fresh);
@@ -501,7 +501,7 @@ export default function ShopScreen() {
         });
         return;
       }
-      const itemId = await upsertItem(sid, row.list.name, row.list.category);
+      const itemId = await upsertItem(sid, row.list.name, row.list.category, session?.user.id);
       fetchItems(sid).then(setStoreItems).catch(() => {});
       router.push({
         pathname: '/report/[id]',

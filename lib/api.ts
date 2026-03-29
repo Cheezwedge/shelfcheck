@@ -126,9 +126,12 @@ export async function submitReport(
 export async function upsertItem(
   storeId: string,
   name: string,
-  category: string
+  category: string,
+  userId?: string | null
 ): Promise<string> {
   const normalized = name.trim().replace(/\s+/g, ' ');
+  // created_by lets the RLS rate-limit policy count correctly per authenticated user
+  const createdBy = userId ?? null;
 
   // Get this store's chain_id
   const { data: storeRow } = await supabase
@@ -148,9 +151,11 @@ export async function upsertItem(
       .maybeSingle();
     if (existing?.id) return existing.id as string;
 
+    const chainPayload: Record<string, unknown> = { chain_id: chainId, store_id: storeId, name: normalized, category };
+    if (createdBy) chainPayload.created_by = createdBy;
     const { data, error } = await supabase
       .from('items')
-      .insert({ chain_id: chainId, store_id: storeId, name: normalized, category })
+      .insert(chainPayload)
       .select('id')
       .single();
     // If chain_id column doesn't exist yet (pre-migration 006), fall through to store-scoped insert
@@ -166,9 +171,11 @@ export async function upsertItem(
     .maybeSingle();
   if (existing?.id) return existing.id as string;
 
+  const storePayload: Record<string, unknown> = { store_id: storeId, name: normalized, category };
+  if (createdBy) storePayload.created_by = createdBy;
   const { data, error } = await supabase
     .from('items')
-    .insert({ store_id: storeId, name: normalized, category })
+    .insert(storePayload)
     .select('id')
     .single();
   if (error) throw error;
