@@ -93,14 +93,25 @@ export async function submitReport(
 ): Promise<string> {
   const payload: Record<string, unknown> = { item_id: itemId, status, user_id: userId };
   if (quantity != null) payload.quantity = quantity;
-  // Pass store_id explicitly so reports are tied to the correct location.
-  // The DB trigger fills it as a fallback if omitted.
   if (storeId) payload.store_id = storeId;
+
   const { data, error } = await supabase
     .from('reports')
     .insert(payload)
     .select('id')
     .single();
+
+  // PGRST204 = column not in schema cache (store_id or quantity may not exist yet).
+  // Retry with only the core fields so submission still works.
+  if (error?.code === 'PGRST204') {
+    const { data: fallback, error: fallbackErr } = await supabase
+      .from('reports')
+      .insert({ item_id: itemId, status, user_id: userId })
+      .select('id')
+      .single();
+    if (fallbackErr) throw fallbackErr;
+    return (fallback as { id: string }).id;
+  }
 
   if (error) throw error;
   return (data as { id: string }).id;
