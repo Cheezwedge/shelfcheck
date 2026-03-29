@@ -45,7 +45,7 @@ export default function ReportScreen() {
         return;
       }
       // Item doesn't exist in Supabase yet — upsert it, then load
-      upsertItem(paramStoreId, paramName, paramCategory ?? 'General', session?.user.id)
+      upsertItem(paramStoreId, paramName, paramCategory ?? 'General')
         .then((newId) => fetchItem(newId))
         .then(setItem)
         .catch((e: unknown) => {

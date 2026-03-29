@@ -448,7 +448,7 @@ export default function ShopScreen() {
     try {
       const storeSid = await ensureStoreId();
       if (!storeSid) return; // no store name at all — nothing to sync
-      await upsertItem(storeSid, name, category || 'General', session?.user.id);
+      await upsertItem(storeSid, name, category || 'General');
       // Refresh so the item's status dot appears immediately
       const fresh = await fetchItems(storeSid);
       setStoreItems(fresh);
@@ -501,7 +501,7 @@ export default function ShopScreen() {
         });
         return;
       }
-      const itemId = await upsertItem(sid, row.list.name, row.list.category, session?.user.id);
+      const itemId = await upsertItem(sid, row.list.name, row.list.category);
       fetchItems(sid).then(setStoreItems).catch(() => {});
       router.push({
         pathname: '/report/[id]',

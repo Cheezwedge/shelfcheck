@@ -130,8 +130,6 @@ export async function upsertItem(
   userId?: string | null
 ): Promise<string> {
   const normalized = name.trim().replace(/\s+/g, ' ');
-  // created_by lets the RLS rate-limit policy count correctly per authenticated user
-  const createdBy = userId ?? null;
 
   // Get this store's chain_id
   const { data: storeRow } = await supabase
@@ -142,7 +140,6 @@ export async function upsertItem(
   const chainId = (storeRow as any)?.chain_id as string | null;
 
   if (chainId) {
-    // Dedup across the whole chain — "Whole Milk" at any Ralphs = same item
     const { data: existing } = await supabase
       .from('items')
       .select('id')
@@ -151,18 +148,15 @@ export async function upsertItem(
       .maybeSingle();
     if (existing?.id) return existing.id as string;
 
-    const chainPayload: Record<string, unknown> = { chain_id: chainId, store_id: storeId, name: normalized, category };
-    if (createdBy) chainPayload.created_by = createdBy;
     const { data, error } = await supabase
       .from('items')
-      .insert(chainPayload)
+      .insert({ chain_id: chainId, store_id: storeId, name: normalized, category })
       .select('id')
       .single();
-    // If chain_id column doesn't exist yet (pre-migration 006), fall through to store-scoped insert
     if (!error) return (data as { id: string }).id;
   }
 
-  // Fallback: store-scoped item (store has no chain match)
+  // Fallback: store-scoped item
   const { data: existing } = await supabase
     .from('items')
     .select('id')
@@ -171,11 +165,9 @@ export async function upsertItem(
     .maybeSingle();
   if (existing?.id) return existing.id as string;
 
-  const storePayload: Record<string, unknown> = { store_id: storeId, name: normalized, category };
-  if (createdBy) storePayload.created_by = createdBy;
   const { data, error } = await supabase
     .from('items')
-    .insert(storePayload)
+    .insert({ store_id: storeId, name: normalized, category })
     .select('id')
     .single();
   if (error) throw error;
