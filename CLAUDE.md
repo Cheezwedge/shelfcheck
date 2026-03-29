@@ -11,7 +11,8 @@ Expo/React Native app that lets users find nearby grocery stores on a map, build
 - `react-leaflet` + `leaflet` for the store map (web only)
 - OpenStreetMap Overpass API for nearby store search (no API key required)
 - Nominatim for zip code → lat/lon geocoding
-- `localStorage` for grocery list persistence (no backend)
+- `localStorage` for grocery list persistence
+- Supabase (Postgres + PostgREST + Auth) for stock reports, item catalog, and user accounts
 
 ## Branch & Deploy Flow
 
@@ -48,15 +49,22 @@ git push origin claude/generate-preview-Y7lCy:gh-pages --force
 
 | File | Purpose |
 |------|---------|
-| `app/(tabs)/_layout.tsx` | Tab bar (Home, My List, Scan) |
-| `app/(tabs)/index.tsx` | Home / StorePicker screen |
-| `app/(tabs)/list.tsx` | Grocery list screen (AnyList-style bottom sheet) |
+| `app/(tabs)/_layout.tsx` | Tab bar (Shop, Scan, Rewards) |
+| `app/(tabs)/index.tsx` | Shop screen — store picker + grocery list + stock status |
+| `app/(tabs)/scan.tsx` | Receipt scan screen |
+| `app/(tabs)/rewards.tsx` | User rewards/points screen |
+| `app/report/[id].tsx` | Report stock status for an item |
+| `app/admin/index.tsx` | Admin item management (sort, badge new items, all-chains view) |
 | `components/StorePicker.tsx` | Store search UI: zip input, radius, chain filters, map+list |
 | `components/StoreMap.web.tsx` | Leaflet map (web only, platform-specific file) |
 | `components/StoreMap.tsx` | Native fallback (returns null) |
+| `lib/api.ts` | Supabase API: fetchItems, submitReport, upsertItem, upsertStore, fetchAdminItems |
+| `lib/types.ts` | Shared types: ItemRow, LiveItem, AdminItem, StockStatus |
 | `lib/stores.ts` | Overpass API queries, CHAINS constant, matchChain(), searchStoresByName() |
 | `lib/groceryList.ts` | localStorage grocery list CRUD (addItem, toggleItem, changeQuantity, etc.) |
 | `lib/sampleItems.ts` | 10 sample items per chain (BY_CHAIN + GENERIC fallback) |
+| `lib/auth.ts` | useAuth() hook — session, isGuest, signOut |
+| `supabase/migrations/` | SQL migration history (001–008) |
 
 ## Grocery List Architecture
 - Lists are stored in `localStorage` keyed by `supabaseId ?? storeName`
