@@ -27,6 +27,7 @@ export default function ReportScreen() {
 
   const [item, setItem] = useState<LiveItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [notTracked, setNotTracked] = useState(false);
   const [selected, setSelected] = useState<'in-stock' | 'out-of-stock' | null>(null);
   const [quantityEstimate, setQuantityEstimate] = useState<number | null>(null);
@@ -47,12 +48,22 @@ export default function ReportScreen() {
       upsertItem(paramStoreId, paramName, paramCategory ?? 'General')
         .then((newId) => fetchItem(newId))
         .then(setItem)
-        .catch(() => setItem(null))
+        .catch((e: unknown) => {
+          const msg = (e as any)?.message ?? String(e);
+          const code = (e as any)?.code ?? '';
+          setLoadError(`${code ? `[${code}] ` : ''}${msg}`);
+          setItem(null);
+        })
         .finally(() => setLoading(false));
     } else {
       fetchItem(id as string)
         .then(setItem)
-        .catch(() => setItem(null))
+        .catch((e: unknown) => {
+          const msg = (e as any)?.message ?? String(e);
+          const code = (e as any)?.code ?? '';
+          setLoadError(`${code ? `[${code}] ` : ''}${msg}`);
+          setItem(null);
+        })
         .finally(() => setLoading(false));
     }
   }, [id, paramName, paramCategory, paramStoreId]);
@@ -119,6 +130,7 @@ export default function ReportScreen() {
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={42} color="#D1D5DB" />
           <Text style={styles.errorText}>Item not found.</Text>
+          {loadError && <Text style={styles.errorDetail}>{loadError}</Text>}
         </View>
       </SafeAreaView>
     );
@@ -294,6 +306,7 @@ const styles = StyleSheet.create({
   scroll:           { padding: 16, paddingBottom: 24 },
   centered:         { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   errorText:        { fontSize: 15, color: '#6B7280' },
+  errorDetail:      { fontSize: 11, color: '#EF4444', textAlign: 'center', fontFamily: 'monospace' },
   notTrackedTitle:  { fontSize: 17, fontWeight: '700', color: '#111827', textAlign: 'center' },
   notTrackedSub:    { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
   backBtn:          { backgroundColor: PRIMARY, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12, marginTop: 8 },
