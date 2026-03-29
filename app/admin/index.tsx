@@ -30,6 +30,8 @@ export default function AdminScreen() {
   const [items, setItems]                   = useState<AdminItem[]>([]);
   const [loading, setLoading]               = useState(true);
   const [search, setSearch]                 = useState('');
+  const [allChains, setAllChains]           = useState(false);
+  const [sortBy, setSortBy]                 = useState<'name' | 'newest' | 'chain'>('name');
   const [selectMode, setSelectMode]         = useState(false);
   const [selected, setSelected]             = useState<Set<string>>(new Set());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -39,26 +41,41 @@ export default function AdminScreen() {
   const [errorMsg, setErrorMsg]             = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!storeId) { setLoading(false); return; }
     setLoading(true);
     setErrorMsg(null);
     try {
-      setItems(await fetchAdminItems(storeId));
+      setItems(await fetchAdminItems(allChains ? null : storeId));
     } catch (err: any) {
       setErrorMsg(err?.message ?? 'Failed to load items.');
     } finally {
       setLoading(false);
     }
-  }, [storeId]);
+  }, [storeId, allChains]);
 
   useEffect(() => { if (!authLoading) load(); }, [authLoading, load]);
 
+  const NOW = Date.now();
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q
-      ? items.filter((i) => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q))
-      : items;
-  }, [items, search]);
+    let list = q
+      ? items.filter((i) =>
+          i.name.toLowerCase().includes(q) ||
+          i.category.toLowerCase().includes(q) ||
+          (i.chain_name ?? '').toLowerCase().includes(q)
+        )
+      : [...items];
+
+    if (sortBy === 'newest') {
+      list.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+    } else if (sortBy === 'chain') {
+      list.sort((a, b) => {
+        const ca = a.chain_name ?? '~'; // push null chains to end
+        const cb = b.chain_name ?? '~';
+        return ca.localeCompare(cb) || a.name.localeCompare(b.name);
+      });
+    }
+    return list;
+  }, [items, search, sortBy]);
 
   // ── Auth / store guards ─────────────────────────────────────────────────────
   if (authLoading) {
@@ -176,7 +193,9 @@ export default function AdminScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Item Admin</Text>
-          <Text style={s.headerSub} numberOfLines={1}>{store?.name ?? ''} · {items.length} items</Text>
+          <Text style={s.headerSub} numberOfLines={1}>
+            {allChains ? 'All chains' : (store?.name ?? '')} · {items.length} items
+          </Text>
         </View>
         <TouchableOpacity
           onPress={() => { setSelectMode((v) => !v); setSelected(new Set()); setPendingDeleteId(null); }}
@@ -187,6 +206,30 @@ export default function AdminScreen() {
             {selectMode ? 'Cancel' : 'Merge'}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Sort + scope controls */}
+      <View style={s.controlBar}>
+        <TouchableOpacity
+          style={[s.scopeBtn, allChains && s.scopeBtnActive]}
+          onPress={() => { setAllChains((v) => !v); setSelected(new Set()); }}
+        >
+          <Ionicons name="globe-outline" size={13} color={allChains ? '#fff' : '#6B7280'} />
+          <Text style={[s.scopeBtnText, allChains && s.scopeBtnTextActive]}>All Chains</Text>
+        </TouchableOpacity>
+        <View style={s.sortGroup}>
+          {(['name', 'newest', 'chain'] as const).map((opt) => (
+            <TouchableOpacity
+              key={opt}
+              style={[s.sortBtn, sortBy === opt && s.sortBtnActive]}
+              onPress={() => setSortBy(opt)}
+            >
+              <Text style={[s.sortBtnText, sortBy === opt && s.sortBtnTextActive]}>
+                {opt === 'name' ? 'A–Z' : opt === 'newest' ? 'Newest' : 'Chain'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Error banner */}
@@ -262,6 +305,10 @@ export default function AdminScreen() {
             const isPendingDelete = pendingDeleteId === item.id;
             const statusColor    = item.status ? (STATUS_COLORS as any)[item.status] : '#D1D5DB';
 
+            const isNew = item.created_at
+              ? NOW - new Date(item.created_at).getTime() < 48 * 60 * 60 * 1000
+              : false;
+
             return (
               <View style={[s.row, isSelected && s.rowSelected, isPendingDelete && s.rowDanger]}>
                 {/* Select checkbox (merge mode) */}
@@ -283,9 +330,13 @@ export default function AdminScreen() {
                   onPress={() => selectMode ? toggleSelect(item.id) : openRename(item)}
                   activeOpacity={0.7}
                 >
-                  <Text style={s.rowName} numberOfLines={1}>{item.name}</Text>
+                  <View style={s.rowNameRow}>
+                    <Text style={s.rowName} numberOfLines={1}>{item.name}</Text>
+                    {isNew && <View style={s.newBadge}><Text style={s.newBadgeText}>NEW</Text></View>}
+                  </View>
                   <Text style={s.rowMeta}>
-                    {item.category}
+                    {item.chain_name ?? item.category}
+                    {' · '}{item.category}
                     {item.report_count > 0
                       ? ` · ${item.report_count} report${item.report_count !== 1 ? 's' : ''}`
                       : ' · no reports'}
@@ -416,7 +467,18 @@ const s = StyleSheet.create({
   errorBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: DANGER, paddingHorizontal: 14, paddingVertical: 10 },
   errorBannerText: { flex: 1, fontSize: 12, color: '#fff', fontWeight: '600' },
 
-  searchBar:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, marginVertical: 10, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E7EB', height: 40 },
+  controlBar:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 6, paddingTop: 4 },
+  scopeBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5, borderColor: '#D1D5DB', backgroundColor: '#fff' },
+  scopeBtnActive: { backgroundColor: '#6B7280', borderColor: '#6B7280' },
+  scopeBtnText:   { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  scopeBtnTextActive: { color: '#fff' },
+  sortGroup:      { flex: 1, flexDirection: 'row', justifyContent: 'flex-end', gap: 4 },
+  sortBtn:        { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#fff' },
+  sortBtnActive:  { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  sortBtnText:    { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  sortBtnTextActive: { color: '#fff' },
+
+  searchBar:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 8, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E7EB', height: 40 },
   searchInput:   { flex: 1, fontSize: 14, color: '#111827' },
 
   mergePanel:      { marginHorizontal: 16, marginBottom: 6, borderRadius: 10, backgroundColor: '#F3F4F6', padding: 12 },
@@ -440,8 +502,11 @@ const s = StyleSheet.create({
   rowDanger:     { backgroundColor: '#FEF2F2', borderWidth: 1.5, borderColor: DANGER + '50' },
   statusDot:     { width: 9, height: 9, borderRadius: 5, flexShrink: 0 },
   rowBody:       { flex: 1, gap: 2, minWidth: 0 },
-  rowName:       { fontSize: 14, fontWeight: '600', color: '#111827' },
-  rowMeta:       { fontSize: 12, color: '#9CA3AF' },
+  rowNameRow:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rowName:       { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1 },
+  newBadge:      { backgroundColor: '#FEF3C7', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  newBadgeText:  { fontSize: 9, fontWeight: '800', color: '#92400E', letterSpacing: 0.5 },
+  rowMeta:       { fontSize: 11, color: '#9CA3AF' },
   checkbox:      { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   checkboxChecked: { backgroundColor: PRIMARY, borderColor: PRIMARY },
   actions:       { flexDirection: 'row', gap: 4, flexShrink: 0 },

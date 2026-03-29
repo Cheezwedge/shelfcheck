@@ -259,42 +259,73 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
 
 export interface AdminItem {
   id: string;
-  store_id: string;
+  store_id: string | null;
+  chain_id: string | null;
+  chain_name: string | null;
   name: string;
   category: string;
+  created_at: string | null;
   report_count: number;
   status: string | null;
   last_reported_at: string | null;
 }
 
-/** Fetch all items for a store with their report counts (admin view). */
-export async function fetchAdminItems(storeId: string): Promise<AdminItem[]> {
-  const { data, error } = await supabase
-    .from('items_with_status')
-    .select('*')
-    .eq('store_id', storeId)
-    .order('name');
+/** Fetch items for admin management.
+ *  - If storeId is provided, scopes to that store's chain (or store_id if no chain).
+ *  - If storeId is null/undefined, returns ALL items across all chains.
+ */
+export async function fetchAdminItems(storeId?: string | null): Promise<AdminItem[]> {
+  let query = supabase
+    .from('items')
+    .select('id, store_id, chain_id, name, category, created_at');
+
+  if (storeId) {
+    // Prefer chain-scoped filter when available
+    const { data: storeRow } = await supabase
+      .from('stores').select('chain_id').eq('id', storeId).maybeSingle();
+    const chainId = (storeRow as any)?.chain_id as string | null;
+    if (chainId) {
+      query = query.eq('chain_id', chainId);
+    } else {
+      query = query.eq('store_id', storeId);
+    }
+  }
+
+  const { data, error } = await query.order('name');
   if (error) throw error;
+  const rows = (data ?? []) as any[];
+
+  // Resolve chain names in one query
+  const chainIds = [...new Set(rows.map((r) => r.chain_id).filter(Boolean))] as string[];
+  const chainMap = new Map<string, string>();
+  if (chainIds.length) {
+    const { data: chains } = await supabase
+      .from('chains').select('id, name').in('id', chainIds);
+    (chains ?? []).forEach((c: any) => chainMap.set(c.id, c.name));
+  }
 
   // Count reports per item
-  const ids = (data as any[]).map((r) => r.id);
-  const { data: counts } = await supabase
-    .from('reports')
-    .select('item_id')
-    .in('item_id', ids);
+  const ids = rows.map((r) => r.id) as string[];
   const countMap = new Map<string, number>();
-  (counts ?? []).forEach((r: { item_id: string }) => {
-    countMap.set(r.item_id, (countMap.get(r.item_id) ?? 0) + 1);
-  });
+  if (ids.length) {
+    const { data: counts } = await supabase
+      .from('reports').select('item_id').in('item_id', ids);
+    (counts ?? []).forEach((r: any) =>
+      countMap.set(r.item_id, (countMap.get(r.item_id) ?? 0) + 1)
+    );
+  }
 
-  return (data as any[]).map((r) => ({
+  return rows.map((r) => ({
     id: r.id,
-    store_id: r.store_id,
+    store_id: r.store_id ?? null,
+    chain_id: r.chain_id ?? null,
+    chain_name: r.chain_id ? (chainMap.get(r.chain_id) ?? null) : null,
     name: r.name,
     category: r.category,
+    created_at: r.created_at ?? null,
     report_count: countMap.get(r.id) ?? 0,
-    status: r.status ?? null,
-    last_reported_at: r.last_reported_at ?? null,
+    status: null,
+    last_reported_at: null,
   }));
 }
 
