@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   SafeAreaView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,6 +33,7 @@ export default function ReportScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [alreadyReported, setAlreadyReported] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id === 'new' && paramName) {
@@ -60,23 +60,20 @@ export default function ReportScreen() {
   const handleSubmit = async () => {
     if (!selected || !item) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       await submitReport(item.id, selected, getReportingUserId(session), quantityEstimate, currentStoreId);
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
+      const msg  = (err as { message?: string })?.message ?? 'Unknown error';
       if (code === '23505') {
-        // Unique index violation: reports_one_per_day — already reported today
         setAlreadyReported(true);
         setSubmitted(true);
         setTimeout(() => router.back(), 1600);
       } else {
-        Alert.alert(
-          'Submission failed',
-          'Please check your connection and try again.',
-          [{ text: 'OK' }]
-        );
+        setSubmitError(`${code ? `[${code}] ` : ''}${msg}`);
       }
     } finally {
       setSubmitting(false);
@@ -259,6 +256,14 @@ export default function ReportScreen() {
           </Text>
         </View>
 
+        {/* Error banner */}
+        {submitError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle-outline" size={15} color="#991B1B" />
+            <Text style={styles.errorBannerText}>{submitError}</Text>
+          </View>
+        )}
+
         {/* Submit */}
         <TouchableOpacity
           style={[styles.submitBtn, (!selected || submitting) && styles.submitBtnDisabled]}
@@ -351,6 +356,12 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled:{ backgroundColor: '#D1D5DB' },
   submitBtnText:    { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12,
+    marginBottom: 12, borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorBannerText: { flex: 1, fontSize: 12, color: '#991B1B', lineHeight: 18 },
   submitPtsChip: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3, gap: 3,
