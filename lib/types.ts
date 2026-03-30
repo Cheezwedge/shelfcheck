@@ -6,6 +6,8 @@ export interface ItemRow {
   chain_id: string | null;
   store_id: string | null;          // present in view, absent in RPC result
   name: string;
+  brand: string | null;
+  size: string | null;
   category: string;
   created_at: string;
   status: StockStatus | null;       // null = no reports yet → shown as 'uncertain'
@@ -19,6 +21,8 @@ export interface LiveItem {
   chainId: string | null;
   storeId: string | null;           // null for chain-level items
   name: string;
+  brand: string | null;
+  size: string | null;
   category: string;
   status: StockStatus;              // guaranteed non-null (null → 'uncertain')
   lastReportedAt: string | null;    // ISO timestamp, null if never reported at this location

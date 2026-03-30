@@ -16,6 +16,8 @@ function toLocalItem(row: ItemRow): LiveItem {
     chainId: row.chain_id ?? null,
     storeId: row.store_id ?? null,
     name: row.name,
+    brand: row.brand ?? null,
+    size: row.size ?? null,
     category: row.category,
     status: row.status ?? 'uncertain',
     lastReportedAt: row.last_reported_at,
@@ -263,6 +265,8 @@ export interface AdminItem {
   chain_id: string | null;
   chain_name: string | null;
   name: string;
+  brand: string | null;
+  size: string | null;
   category: string;
   created_at: string | null;
   report_count: number;
@@ -277,7 +281,7 @@ export interface AdminItem {
 export async function fetchAdminItems(storeId?: string | null): Promise<AdminItem[]> {
   let query = supabase
     .from('items')
-    .select('id, store_id, chain_id, name, category, created_at');
+    .select('id, store_id, chain_id, name, brand, size, category, created_at');
 
   if (storeId) {
     // Prefer chain-scoped filter when available
@@ -321,6 +325,8 @@ export async function fetchAdminItems(storeId?: string | null): Promise<AdminIte
     chain_id: r.chain_id ?? null,
     chain_name: r.chain_id ? (chainMap.get(r.chain_id) ?? null) : null,
     name: r.name,
+    brand: r.brand ?? null,
+    size: r.size ?? null,
     category: r.category,
     created_at: r.created_at ?? null,
     report_count: countMap.get(r.id) ?? 0,
@@ -329,14 +335,23 @@ export async function fetchAdminItems(storeId?: string | null): Promise<AdminIte
   }));
 }
 
+/** Update any combination of item fields (admin only — enforced by RLS). */
+export async function updateItem(
+  itemId: string,
+  fields: { name?: string; brand?: string | null; size?: string | null; category?: string }
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (fields.name     !== undefined) payload.name     = fields.name.trim().replace(/\s+/g, ' ');
+  if (fields.brand    !== undefined) payload.brand    = fields.brand?.trim()    || null;
+  if (fields.size     !== undefined) payload.size     = fields.size?.trim()     || null;
+  if (fields.category !== undefined) payload.category = fields.category.trim()  || null;
+  const { error } = await supabase.from('items').update(payload).eq('id', itemId);
+  if (error) throw error;
+}
+
 /** Rename an item (admin only — enforced by RLS). */
 export async function renameItem(itemId: string, newName: string): Promise<void> {
-  const normalized = newName.trim().replace(/\s+/g, ' ');
-  const { error } = await supabase
-    .from('items')
-    .update({ name: normalized })
-    .eq('id', itemId);
-  if (error) throw error;
+  return updateItem(itemId, { name: newName });
 }
 
 /**

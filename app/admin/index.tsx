@@ -13,7 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
-import { fetchAdminItems, renameItem, deleteItem, mergeItems, type AdminItem } from '../../lib/api';
+import { fetchAdminItems, updateItem, deleteItem, mergeItems, type AdminItem } from '../../lib/api';
 import { getSavedStore } from '../../lib/stores';
 import { STATUS_COLORS } from '../../data';
 
@@ -35,8 +35,11 @@ export default function AdminScreen() {
   const [selectMode, setSelectMode]         = useState(false);
   const [selected, setSelected]             = useState<Set<string>>(new Set());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget]     = useState<AdminItem | null>(null);
-  const [renameText, setRenameText]         = useState('');
+  const [editTarget, setEditTarget]         = useState<AdminItem | null>(null);
+  const [editName, setEditName]             = useState('');
+  const [editBrand, setEditBrand]           = useState('');
+  const [editSize, setEditSize]             = useState('');
+  const [editCategory, setEditCategory]     = useState('');
   const [saving, setSaving]                 = useState(false);
   const [errorMsg, setErrorMsg]             = useState<string | null>(null);
 
@@ -138,24 +141,34 @@ export default function AdminScreen() {
     }
   }
 
-  function openRename(item: AdminItem) {
+  function openEdit(item: AdminItem) {
     setPendingDeleteId(null);
-    setRenameTarget(item);
-    setRenameText(item.name);
+    setEditTarget(item);
+    setEditName(item.name);
+    setEditBrand(item.brand ?? '');
+    setEditSize(item.size ?? '');
+    setEditCategory(item.category);
   }
 
-  async function commitRename() {
-    if (!renameTarget || !renameText.trim()) return;
+  async function commitEdit() {
+    if (!editTarget || !editName.trim()) return;
     setSaving(true);
     setErrorMsg(null);
     try {
-      await renameItem(renameTarget.id, renameText.trim());
+      await updateItem(editTarget.id, {
+        name:     editName,
+        brand:    editBrand  || null,
+        size:     editSize   || null,
+        category: editCategory || editTarget.category,
+      });
       setItems((prev) => prev.map((i) =>
-        i.id === renameTarget.id ? { ...i, name: renameText.trim() } : i
+        i.id === editTarget.id
+          ? { ...i, name: editName.trim(), brand: editBrand.trim() || null, size: editSize.trim() || null, category: editCategory.trim() || i.category }
+          : i
       ));
-      setRenameTarget(null);
+      setEditTarget(null);
     } catch (err: any) {
-      setErrorMsg('Rename failed: ' + (err?.message ?? String(err)));
+      setErrorMsg('Save failed: ' + (err?.message ?? String(err)));
     } finally {
       setSaving(false);
     }
@@ -324,22 +337,26 @@ export default function AdminScreen() {
                 {/* Status dot */}
                 <View style={[s.statusDot, { backgroundColor: statusColor }]} />
 
-                {/* Name + meta — tapping opens rename */}
+                {/* Name + meta — tapping opens edit */}
                 <TouchableOpacity
                   style={s.rowBody}
-                  onPress={() => selectMode ? toggleSelect(item.id) : openRename(item)}
+                  onPress={() => selectMode ? toggleSelect(item.id) : openEdit(item)}
                   activeOpacity={0.7}
                 >
                   <View style={s.rowNameRow}>
                     <Text style={s.rowName} numberOfLines={1}>{item.name}</Text>
                     {isNew && <View style={s.newBadge}><Text style={s.newBadgeText}>NEW</Text></View>}
                   </View>
-                  <Text style={s.rowMeta}>
-                    {item.chain_name ?? item.category}
-                    {' · '}{item.category}
-                    {item.report_count > 0
-                      ? ` · ${item.report_count} report${item.report_count !== 1 ? 's' : ''}`
-                      : ' · no reports'}
+                  <Text style={s.rowMeta} numberOfLines={1}>
+                    {[
+                      item.chain_name ?? null,
+                      item.brand      ?? null,
+                      item.size       ?? null,
+                      item.category,
+                      item.report_count > 0
+                        ? `${item.report_count} report${item.report_count !== 1 ? 's' : ''}`
+                        : 'no reports',
+                    ].filter(Boolean).join(' · ')}
                   </Text>
                 </TouchableOpacity>
 
@@ -368,7 +385,7 @@ export default function AdminScreen() {
                   ) : (
                     <View style={s.actions}>
                       <TouchableOpacity
-                        onPress={() => openRename(item)}
+                        onPress={() => openEdit(item)}
                         hitSlop={8}
                         style={s.actionBtn}
                       >
@@ -396,44 +413,85 @@ export default function AdminScreen() {
         </View>
       )}
 
-      {/* Rename modal */}
+      {/* Edit item modal */}
       <Modal
-        visible={!!renameTarget}
+        visible={!!editTarget}
         transparent
         animationType="fade"
-        onRequestClose={() => setRenameTarget(null)}
+        onRequestClose={() => setEditTarget(null)}
       >
         <TouchableOpacity
           style={s.modalBackdrop}
           activeOpacity={1}
-          onPress={() => setRenameTarget(null)}
+          onPress={() => setEditTarget(null)}
         >
           <TouchableOpacity activeOpacity={1} style={s.modalCard}>
-            <Text style={s.modalTitle}>Rename Item</Text>
-            <Text style={s.modalSub}>
-              {renameTarget?.report_count
-                ? `${renameTarget.report_count} report(s) will follow the new name.`
-                : 'No reports yet — safe to rename freely.'}
-            </Text>
-            <TextInput
-              style={s.modalInput}
-              value={renameText}
-              onChangeText={setRenameText}
-              autoFocus
-              selectTextOnFocus
-              returnKeyType="done"
-              onSubmitEditing={commitRename}
-              placeholder="Item name"
-              placeholderTextColor="#9CA3AF"
-            />
+            <Text style={s.modalTitle}>Edit Item</Text>
+            {!!editTarget?.report_count && (
+              <Text style={s.modalSub}>
+                {editTarget.report_count} report{editTarget.report_count !== 1 ? 's' : ''} linked — name changes will carry over.
+              </Text>
+            )}
+
+            <View style={s.fieldGroup}>
+              <Text style={s.fieldLabel}>Name *</Text>
+              <TextInput
+                style={s.modalInput}
+                value={editName}
+                onChangeText={setEditName}
+                autoFocus
+                selectTextOnFocus
+                returnKeyType="next"
+                placeholder="e.g. Whole Milk"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
+            <View style={s.fieldGroup}>
+              <Text style={s.fieldLabel}>Brand</Text>
+              <TextInput
+                style={s.modalInput}
+                value={editBrand}
+                onChangeText={setEditBrand}
+                returnKeyType="next"
+                placeholder="e.g. Kirkland, Annie's"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
+            <View style={s.fieldGroup}>
+              <Text style={s.fieldLabel}>Size / Quantity</Text>
+              <TextInput
+                style={s.modalInput}
+                value={editSize}
+                onChangeText={setEditSize}
+                returnKeyType="next"
+                placeholder="e.g. 32 oz, 6-pack, 1 gal"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
+            <View style={s.fieldGroup}>
+              <Text style={s.fieldLabel}>Category</Text>
+              <TextInput
+                style={s.modalInput}
+                value={editCategory}
+                onChangeText={setEditCategory}
+                returnKeyType="done"
+                onSubmitEditing={commitEdit}
+                placeholder="e.g. Dairy, Produce"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
             <View style={s.modalActions}>
-              <TouchableOpacity style={s.modalCancel} onPress={() => setRenameTarget(null)}>
+              <TouchableOpacity style={s.modalCancel} onPress={() => setEditTarget(null)}>
                 <Text style={s.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.modalSave, (!renameText.trim() || saving) && s.modalSaveDim]}
-                onPress={commitRename}
-                disabled={!renameText.trim() || saving}
+                style={[s.modalSave, (!editName.trim() || saving) && s.modalSaveDim]}
+                onPress={commitEdit}
+                disabled={!editName.trim() || saving}
               >
                 {saving
                   ? <ActivityIndicator color="#fff" size="small" />
@@ -522,11 +580,13 @@ const s = StyleSheet.create({
   savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  modalCard:     { backgroundColor: '#fff', borderRadius: 18, padding: 24, width: '100%', maxWidth: 400, gap: 14 },
+  modalCard:     { backgroundColor: '#fff', borderRadius: 18, padding: 24, width: '100%', maxWidth: 400, gap: 12 },
   modalTitle:    { fontSize: 18, fontWeight: '700', color: '#111827' },
-  modalSub:      { fontSize: 13, color: '#6B7280', lineHeight: 18, marginTop: -6 },
-  modalInput:    { borderWidth: 1.5, borderColor: PRIMARY, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, fontSize: 16, color: '#111827' },
-  modalActions:  { flexDirection: 'row', gap: 10 },
+  modalSub:      { fontSize: 13, color: '#6B7280', lineHeight: 18, marginTop: -4 },
+  fieldGroup:    { gap: 4 },
+  fieldLabel:    { fontSize: 12, fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalInput:    { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: '#111827' },
+  modalActions:  { flexDirection: 'row', gap: 10, marginTop: 4 },
   modalCancel:   { flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 11 },
   modalCancelText: { fontSize: 15, fontWeight: '600', color: '#6B7280' },
   modalSave:     { flex: 1, borderRadius: 10, backgroundColor: PRIMARY, alignItems: 'center', paddingVertical: 11 },
