@@ -129,7 +129,9 @@ export async function upsertItem(
   storeId: string,
   name: string,
   category: string,
-  userId?: string | null
+  userId?: string | null,
+  brand?: string | null,
+  size?: string | null,
 ): Promise<string> {
   const normalized = name.trim().replace(/\s+/g, ' ');
 
@@ -140,6 +142,10 @@ export async function upsertItem(
     .eq('id', storeId)
     .maybeSingle();
   const chainId = (storeRow as any)?.chain_id as string | null;
+
+  const extra: Record<string, unknown> = {};
+  if (brand?.trim()) extra.brand = brand.trim();
+  if (size?.trim())  extra.size  = size.trim();
 
   if (chainId) {
     const { data: existing } = await supabase
@@ -152,7 +158,7 @@ export async function upsertItem(
 
     const { data, error } = await supabase
       .from('items')
-      .insert({ chain_id: chainId, store_id: storeId, name: normalized, category })
+      .insert({ chain_id: chainId, store_id: storeId, name: normalized, category, ...extra })
       .select('id')
       .single();
     if (!error) return (data as { id: string }).id;
@@ -169,7 +175,7 @@ export async function upsertItem(
 
   const { data, error } = await supabase
     .from('items')
-    .insert({ store_id: storeId, name: normalized, category })
+    .insert({ store_id: storeId, name: normalized, category, ...extra })
     .select('id')
     .single();
   if (error) throw error;

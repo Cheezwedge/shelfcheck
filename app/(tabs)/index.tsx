@@ -65,7 +65,7 @@ function AddSheet({
   activeItems: GroceryListItem[];
   statusByName: Map<string, StockStatus>;
   loading: boolean;
-  onAdd: (name: string, category: string, itemId: string | null) => void;
+  onAdd: (name: string, category: string, itemId: string | null, brand?: string, size?: string) => void;
   onChangeQty: (name: string, delta: number) => void;
   onClose: () => void;
 }) {
@@ -73,6 +73,9 @@ function AddSheet({
   // Suggestions that share significant words with a custom query — shown for
   // dedup confirmation before the user creates a brand-new item.
   const [similarItems, setSimilarItems] = useState<Suggestion[]>([]);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customBrand, setCustomBrand]       = useState('');
+  const [customSize, setCustomSize]         = useState('');
   const inputRef = useRef<TextInput>(null);
 
   const inListMap = useMemo(() => {
@@ -85,12 +88,20 @@ function AddSheet({
     if (visible) {
       setQuery('');
       setSimilarItems([]);
+      setShowCustomForm(false);
+      setCustomBrand('');
+      setCustomSize('');
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [visible]);
 
-  // Clear similar-items prompt whenever the query changes
-  useEffect(() => { setSimilarItems([]); }, [query]);
+  // Clear similar-items prompt and custom form whenever the query changes
+  useEffect(() => {
+    setSimilarItems([]);
+    setShowCustomForm(false);
+    setCustomBrand('');
+    setCustomSize('');
+  }, [query]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -108,7 +119,6 @@ function AddSheet({
     const qLower = trimmedQuery.toLowerCase();
 
     // Find suggestions that share at least one significant word (≥3 chars) with the query.
-    // This catches "Organic Milk" when user types "Milk", helping avoid near-duplicates.
     const words = qLower.split(/\s+/).filter((w) => w.length >= 3);
     const similar =
       words.length > 0
@@ -119,14 +129,22 @@ function AddSheet({
         : [];
 
     if (similar.length > 0 && similarItems.length === 0) {
-      // First tap: show similar items so the user can pick one instead of duplicating
+      // Show similar items so the user can pick one instead of duplicating
       setSimilarItems(similar);
     } else {
-      // Second tap (user confirmed) or no similar items: create the new item
-      onAdd(trimmedQuery, 'General', null);
-      setQuery('');
-      setSimilarItems([]);
+      // No similar items (or already dismissed): expand the brand/size form
+      setShowCustomForm(true);
     }
+  }
+
+  function commitCustomAdd() {
+    if (!trimmedQuery) return;
+    onAdd(trimmedQuery, 'General', null, customBrand.trim() || undefined, customSize.trim() || undefined);
+    setQuery('');
+    setSimilarItems([]);
+    setShowCustomForm(false);
+    setCustomBrand('');
+    setCustomSize('');
   }
 
   return (
@@ -208,9 +226,8 @@ function AddSheet({
                     <TouchableOpacity
                       style={sheet.addAnywayBtn}
                       onPress={() => {
-                        onAdd(trimmedQuery, 'General', null);
-                        setQuery('');
                         setSimilarItems([]);
+                        setShowCustomForm(true);
                       }}
                     >
                       <Ionicons name="add-circle-outline" size={15} color="#6B7280" />
@@ -221,17 +238,53 @@ function AddSheet({
                   </View>
                 )}
 
-                {/* ── Add custom row (shown only when no dedup prompt) ── */}
+                {/* ── Add custom row / expanded form (shown only when no dedup prompt) ── */}
                 {showCustomAdd && similarItems.length === 0 && (
-                  <TouchableOpacity style={sheet.customRow} onPress={handleCustomAdd}>
-                    <View style={sheet.customIcon}>
-                      <Ionicons name="add" size={18} color={PRIMARY} />
+                  showCustomForm ? (
+                    <View style={sheet.customForm}>
+                      <View style={sheet.customFormHeader}>
+                        <View style={sheet.customIcon}>
+                          <Ionicons name="add" size={18} color={PRIMARY} />
+                        </View>
+                        <Text style={sheet.customLabel} numberOfLines={1}>"{trimmedQuery}"</Text>
+                        <TouchableOpacity onPress={() => setShowCustomForm(false)} hitSlop={8}>
+                          <Ionicons name="close" size={16} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={sheet.customFormFields}>
+                        <TextInput
+                          style={sheet.customFormInput}
+                          placeholder="Brand (optional)"
+                          placeholderTextColor="#9CA3AF"
+                          value={customBrand}
+                          onChangeText={setCustomBrand}
+                          returnKeyType="next"
+                        />
+                        <TextInput
+                          style={sheet.customFormInput}
+                          placeholder="Size / qty (optional)"
+                          placeholderTextColor="#9CA3AF"
+                          value={customSize}
+                          onChangeText={setCustomSize}
+                          returnKeyType="done"
+                          onSubmitEditing={commitCustomAdd}
+                        />
+                      </View>
+                      <TouchableOpacity style={sheet.customFormBtn} onPress={commitCustomAdd}>
+                        <Text style={sheet.customFormBtnText}>Add to list</Text>
+                      </TouchableOpacity>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={sheet.customLabel}>Add "{trimmedQuery}"</Text>
-                      <Text style={sheet.customSub}>Custom item · tap to add to list</Text>
-                    </View>
-                  </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={sheet.customRow} onPress={handleCustomAdd}>
+                      <View style={sheet.customIcon}>
+                        <Ionicons name="add" size={18} color={PRIMARY} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={sheet.customLabel}>Add "{trimmedQuery}"</Text>
+                        <Text style={sheet.customSub}>Custom item · tap to add details</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )
                 )}
               </>
             }
@@ -430,7 +483,7 @@ export default function ShopScreen() {
   }
 
   // Handlers
-  async function handleAdd(name: string, category: string, itemId: string | null) {
+  async function handleAdd(name: string, category: string, itemId: string | null, brand?: string, size?: string) {
     // Always add to the local grocery list immediately
     addItem(sk, { name, category: category || 'General', itemId });
     refresh();
@@ -448,7 +501,7 @@ export default function ShopScreen() {
     try {
       const storeSid = await ensureStoreId();
       if (!storeSid) return; // no store name at all — nothing to sync
-      await upsertItem(storeSid, name, category || 'General');
+      await upsertItem(storeSid, name, category || 'General', null, brand, size);
       // Refresh so the item's status dot appears immediately
       const fresh = await fetchItems(storeSid);
       setStoreItems(fresh);
@@ -924,8 +977,14 @@ const sheet = StyleSheet.create({
   addBtn:      { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
   customRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, gap: 10, marginBottom: 4 },
   customIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY + '20', alignItems: 'center', justifyContent: 'center' },
-  customLabel:    { fontSize: 15, fontWeight: '700', color: PRIMARY },
+  customLabel:    { fontSize: 15, fontWeight: '700', color: PRIMARY, flex: 1 },
   customSub:      { fontSize: 11, color: '#6B7280' },
+  customForm:        { backgroundColor: '#ECFDF5', borderRadius: 12, padding: 12, gap: 10, marginBottom: 4 },
+  customFormHeader:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  customFormFields:  { gap: 8 },
+  customFormInput:   { backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#D1FAE5', paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: '#111827' },
+  customFormBtn:     { backgroundColor: PRIMARY, borderRadius: 8, alignItems: 'center', paddingVertical: 10 },
+  customFormBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   centered:       { paddingVertical: 40, alignItems: 'center' },
   emptyText:      { fontSize: 14, color: '#9CA3AF' },
   // Similar-items dedup prompt
