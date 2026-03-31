@@ -525,10 +525,17 @@ export default function ShopScreen() {
   function handleReAdd(id: string)                { reAddItem(sk, id);             refresh(); }
 
   function handleClearHistory() {
-    Alert.alert('Clear History', 'Remove all checked items?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(sk); refresh(); } },
-    ]);
+    if (Platform.OS === 'web') {
+      if ((window as any).confirm('Remove all checked items from history?')) {
+        clearHistory(sk);
+        refresh();
+      }
+    } else {
+      Alert.alert('Clear History', 'Remove all checked items?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(sk); refresh(); } },
+      ]);
+    }
   }
 
   async function handleReportActive(row: ActiveRow) {
