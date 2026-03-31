@@ -358,6 +358,7 @@ export default function ShopScreen() {
   const [reportingListId, setReportingListId] = useState<string | null>(null);
   // Show a nudge banner when a guest tries to add a custom item (needs account to sync)
   const [showSignInNudge, setShowSignInNudge] = useState(false);
+  const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
   const sk = storeKey(selectedStore);
   const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
@@ -525,17 +526,13 @@ export default function ShopScreen() {
   function handleReAdd(id: string)                { reAddItem(sk, id);             refresh(); }
 
   function handleClearHistory() {
-    if (Platform.OS === 'web') {
-      if ((window as any).confirm('Remove all checked items from history?')) {
-        clearHistory(sk);
-        refresh();
-      }
-    } else {
-      Alert.alert('Clear History', 'Remove all checked items?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: () => { clearHistory(sk); refresh(); } },
-      ]);
-    }
+    setConfirmClearHistory(true);
+  }
+
+  function commitClearHistory() {
+    clearHistory(sk);
+    refresh();
+    setConfirmClearHistory(false);
   }
 
   async function handleReportActive(row: ActiveRow) {
@@ -786,9 +783,21 @@ export default function ShopScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
               {section.key === 'history' && (
-                <TouchableOpacity onPress={handleClearHistory} hitSlop={8}>
-                  <Text style={styles.clearText}>Clear</Text>
-                </TouchableOpacity>
+                confirmClearHistory ? (
+                  <View style={styles.clearConfirm}>
+                    <Text style={styles.clearConfirmText}>Remove all?</Text>
+                    <TouchableOpacity onPress={commitClearHistory} style={styles.clearConfirmYes}>
+                      <Text style={styles.clearConfirmYesText}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setConfirmClearHistory(false)} style={styles.clearConfirmNo}>
+                      <Text style={styles.clearConfirmNoText}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={handleClearHistory} hitSlop={8}>
+                    <Text style={styles.clearText}>Clear</Text>
+                  </TouchableOpacity>
+                )
               )}
             </View>
           )}
@@ -896,6 +905,12 @@ const styles = StyleSheet.create({
   sectionHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 2 },
   sectionTitle:    { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6 },
   clearText:       { fontSize: 12, color: '#EF4444', fontWeight: '600' },
+  clearConfirm:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  clearConfirmText:   { fontSize: 12, color: '#EF4444', fontWeight: '600' },
+  clearConfirmYes:    { backgroundColor: '#EF4444', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  clearConfirmYesText:{ fontSize: 12, fontWeight: '700', color: '#fff' },
+  clearConfirmNo:     { backgroundColor: '#F3F4F6', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  clearConfirmNoText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
   sep:             { height: 1, backgroundColor: '#F3F4F6', marginLeft: 44 },
   // Active row
   row:             { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },
