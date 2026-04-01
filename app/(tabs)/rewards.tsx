@@ -223,6 +223,8 @@ export default function RewardsScreen() {
   const [loading, setLoading]             = useState(true);
   const [leaderboard, setLeaderboard]     = useState<LeaderboardEntry[]>([]);
   const [lbLoading, setLbLoading]         = useState(true);
+  const [lbError, setLbError]             = useState<string | null>(null);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [previewBadge, setPreviewBadge]   = useState<Badge | null>(null);
   const [featuredBadgeId, setFeaturedBadgeId] = useState<string | null>(() => {
     try { return localStorage.getItem(FEATURED_KEY); } catch { return null; }
@@ -244,8 +246,14 @@ export default function RewardsScreen() {
 
   const loadLeaderboard = useCallback(async () => {
     setLbLoading(true);
-    try { setLeaderboard(await fetchLeaderboard(25)); } catch {}
-    finally { setLbLoading(false); }
+    setLbError(null);
+    try {
+      setLeaderboard(await fetchLeaderboard(25));
+    } catch (err: any) {
+      setLbError(err?.message ?? 'Failed to load leaderboard');
+    } finally {
+      setLbLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
@@ -294,10 +302,19 @@ export default function RewardsScreen() {
     setNameSaving(true);
     try {
       await updateUsername(session.user.id, nameInput);
-      setProfile((p) => p ? { ...p, username: nameInput.trim() || null } : p);
+      const trimmed = nameInput.trim() || null;
+      setProfile((p) => p
+        ? { ...p, username: trimmed }
+        : { id: session.user.id, username: trimmed, points: 0, pending_points: 0, reports_count: 0, accuracy_ratio: 1, streak_days: 0, joined_at: null }
+      );
       setEditingName(false);
-    } catch {}
-    finally { setNameSaving(false); }
+    } catch (err: any) {
+      // Show error inline so user knows it failed
+      setNameSaving(false);
+      alert('Could not save name: ' + (err?.message ?? String(err)));
+      return;
+    }
+    setNameSaving(false);
   }
 
   // Sort ALL_BADGES: earned first, then by rarity
@@ -323,7 +340,11 @@ export default function RewardsScreen() {
             {loading ? (
               <ActivityIndicator color="#fff" size="large" />
             ) : featured ? (
-              <TouchableOpacity style={styles.featuredRow} onPress={() => setPreviewBadge(featured)} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.featuredRow}
+                onPress={() => earned.length > 1 ? setShowAvatarPicker(true) : setPreviewBadge(featured)}
+                activeOpacity={0.8}
+              >
                 <View>
                   <GlowBadge badge={featured} size={64} />
                   {earned.length > 1 && (
@@ -507,6 +528,12 @@ export default function RewardsScreen() {
 
         {lbLoading ? (
           <View style={lb.loading}><ActivityIndicator color={PRIMARY} /></View>
+        ) : lbError ? (
+          <View style={lb.empty}>
+            <Ionicons name="warning-outline" size={32} color="#FCA5A5" />
+            <Text style={lb.emptyText}>Leaderboard unavailable</Text>
+            <Text style={lb.emptyHint}>Run migration 010 in Supabase to enable it.{'\n'}{lbError}</Text>
+          </View>
         ) : leaderboard.length === 0 ? (
           <View style={lb.empty}>
             <Ionicons name="podium-outline" size={32} color="#D1D5DB" />
@@ -598,6 +625,42 @@ export default function RewardsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Avatar picker modal */}
+      <Modal visible={showAvatarPicker} transparent animationType="fade" onRequestClose={() => setShowAvatarPicker(false)}>
+        <TouchableOpacity style={md.backdrop} activeOpacity={1} onPress={() => setShowAvatarPicker(false)}>
+          <TouchableOpacity activeOpacity={1} style={[md.card, { alignItems: 'stretch' }]}>
+            <Text style={[md.title, { fontSize: 17, marginBottom: 4 }]}>Choose Avatar</Text>
+            <Text style={[md.description, { marginBottom: 12, fontSize: 12 }]}>Pick from your earned badges</Text>
+            <View style={av.grid}>
+              {earned.map((b) => {
+                const isActive = featuredBadgeId === b.id || (!featuredBadgeId && featured?.id === b.id);
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={[av.item, isActive && { borderColor: b.color, borderWidth: 2 }]}
+                    onPress={() => { handleSetFeatured(b.id); setShowAvatarPicker(false); }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[av.iconBox, { backgroundColor: b.bg }]}>
+                      <Ionicons name={b.icon as any} size={26} color={b.color} />
+                    </View>
+                    <Text style={av.name} numberOfLines={1}>{b.title}</Text>
+                    {isActive && (
+                      <View style={av.activeDot}>
+                        <Ionicons name="checkmark" size={9} color="#fff" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={md.closeBtn} onPress={() => setShowAvatarPicker(false)}>
+              <Text style={md.closeBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Badge preview / avatar picker modal */}
       {previewBadge && (
@@ -739,6 +802,7 @@ const lb = StyleSheet.create({
   loading:      { paddingVertical: 32, alignItems: 'center' },
   empty:        { paddingVertical: 32, alignItems: 'center', gap: 8 },
   emptyText:    { fontSize: 14, color: '#9CA3AF' },
+  emptyHint:    { fontSize: 11, color: '#D1D5DB', textAlign: 'center', paddingHorizontal: 16 },
   card:         { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden', marginBottom: 4 },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   rowMe:        { backgroundColor: '#ECFDF5' },
@@ -757,6 +821,14 @@ const lb = StyleSheet.create({
   myRankRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
   myRankText:   { flex: 1, fontSize: 13, fontWeight: '600', color: '#6B7280' },
   myRankPts:    { fontSize: 13, fontWeight: '700', color: '#9CA3AF' },
+});
+
+const av = StyleSheet.create({
+  grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  item:      { width: '30%', alignItems: 'center', gap: 5, backgroundColor: '#F9FAFB', borderRadius: 14, padding: 10, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  iconBox:   { width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  name:      { fontSize: 10, fontWeight: '700', color: '#374151', textAlign: 'center' },
+  activeDot: { position: 'absolute', top: 4, right: 4, backgroundColor: '#1D9E75', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
 });
 
 const md = StyleSheet.create({

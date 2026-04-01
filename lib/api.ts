@@ -290,10 +290,13 @@ export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> 
   }));
 }
 
-/** Set the display name for the current user. */
+/** Set the display name for the current user. Uses upsert so it works even
+ *  if the profile row doesn't exist yet (user hasn't submitted a report). */
 export async function updateUsername(userId: string, username: string): Promise<void> {
   const trimmed = username.trim().slice(0, 30);
-  const { error } = await supabase.from('profiles').update({ username: trimmed || null }).eq('id', userId);
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({ id: userId, username: trimmed || null }, { onConflict: 'id' });
   if (error) throw error;
 }
 
