@@ -9,14 +9,13 @@ RETURNS TABLE (
   username       text,
   points         int,
   reports_count  int,
-  accuracy_ratio numeric,
   joined_at      timestamptz
 )
 SECURITY DEFINER
 LANGUAGE sql STABLE AS $$
-  SELECT id, username, points, reports_count, accuracy_ratio, joined_at
+  SELECT id, username, points, reports_count, joined_at
   FROM profiles
-  WHERE points > 0
+  WHERE COALESCE(points, 0) > 0
   ORDER BY points DESC
   LIMIT p_limit;
 $$;
@@ -28,6 +27,6 @@ SECURITY DEFINER
 LANGUAGE sql STABLE AS $$
   SELECT
     (SELECT COUNT(*) + 1 FROM profiles
-     WHERE points > COALESCE((SELECT points FROM profiles WHERE id = p_user_id), 0)) AS rank,
-    (SELECT COUNT(*) FROM profiles WHERE points > 0) AS total_users;
+     WHERE COALESCE(points, 0) > COALESCE((SELECT points FROM profiles WHERE id = p_user_id), 0)) AS rank,
+    (SELECT COUNT(*) FROM profiles WHERE COALESCE(points, 0) > 0) AS total_users;
 $$;
