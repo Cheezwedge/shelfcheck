@@ -3,30 +3,15 @@
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username text;
 
 -- Fetch top N users by points (SECURITY DEFINER bypasses RLS so anyone can view)
-CREATE OR REPLACE FUNCTION fetch_leaderboard(p_limit int DEFAULT 25)
-RETURNS TABLE (
-  id             uuid,
-  username       text,
-  points         int,
-  reports_count  int,
-  joined_at      timestamptz
-)
+-- Only uses id/points/username which are guaranteed to exist in profiles
+DROP FUNCTION IF EXISTS fetch_leaderboard(int);
+CREATE FUNCTION fetch_leaderboard(p_limit int DEFAULT 25)
+RETURNS TABLE (id uuid, username text, points int)
 SECURITY DEFINER
 LANGUAGE sql STABLE AS $$
-  SELECT id, username, points, reports_count, joined_at
+  SELECT id, username, points
   FROM profiles
   WHERE COALESCE(points, 0) > 0
-  ORDER BY points DESC
+  ORDER BY points DESC NULLS LAST
   LIMIT p_limit;
-$$;
-
--- Get the current user's rank on the leaderboard
-CREATE OR REPLACE FUNCTION get_user_rank(p_user_id uuid)
-RETURNS TABLE (rank bigint, total_users bigint)
-SECURITY DEFINER
-LANGUAGE sql STABLE AS $$
-  SELECT
-    (SELECT COUNT(*) + 1 FROM profiles
-     WHERE COALESCE(points, 0) > COALESCE((SELECT points FROM profiles WHERE id = p_user_id), 0)) AS rank,
-    (SELECT COUNT(*) FROM profiles WHERE COALESCE(points, 0) > 0) AS total_users;
 $$;

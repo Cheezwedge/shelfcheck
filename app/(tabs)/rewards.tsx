@@ -272,9 +272,9 @@ export default function RewardsScreen() {
   const points        = profile?.points        ?? 0;
   const pendingPts    = profile?.pending_points ?? 0;
   const reportsCount  = profile?.reports_count  ?? 0;
-  const accuracyRatio = profile?.accuracy_ratio ?? 1;
-  const streakDays    = profile?.streak_days    ?? 0;
-  const joinedAt      = profile?.joined_at      ?? null;
+  const accuracyRatio = (profile as any)?.accuracy_ratio ?? 1;
+  const streakDays    = (profile as any)?.streak_days    ?? 0;
+  const joinedAt      = (profile as any)?.joined_at      ?? null;
   const displayName   = profile?.username       ?? null;
   const tier          = getTier(points);
   const progress      = tierProgress(points);
@@ -305,7 +305,7 @@ export default function RewardsScreen() {
       const trimmed = nameInput.trim() || null;
       setProfile((p) => p
         ? { ...p, username: trimmed }
-        : { id: session.user.id, username: trimmed, points: 0, pending_points: 0, reports_count: 0, accuracy_ratio: 1, streak_days: 0, joined_at: null }
+        : { id: session.user.id, username: trimmed, points: 0, pending_points: 0, reports_count: 0 } as any
       );
       setEditingName(false);
     } catch (err: any) {
@@ -543,7 +543,6 @@ export default function RewardsScreen() {
           <View style={lb.card}>
             {leaderboard.map((entry) => {
               const isMe = entry.id === reportingId;
-              const isFounder = entry.joined_at ? new Date(entry.joined_at) < new Date('2027-01-01') : false;
               const name = entry.username ?? `Reporter ${entry.id.slice(-5).toUpperCase()}`;
               const rankColor = entry.rank === 1 ? '#F59E0B' : entry.rank === 2 ? '#9CA3AF' : entry.rank === 3 ? '#B45309' : '#E5E7EB';
               const rankText = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`;
@@ -555,12 +554,6 @@ export default function RewardsScreen() {
                   <View style={lb.nameCol}>
                     <View style={lb.nameRow}>
                       <Text style={[lb.name, isMe && lb.nameMe]} numberOfLines={1}>{name}</Text>
-                      {isFounder && (
-                        <View style={lb.founderBadge}>
-                          <Ionicons name="leaf" size={9} color="#F59E0B" />
-                          <Text style={lb.founderText}>Founder</Text>
-                        </View>
-                      )}
                       {isMe && <View style={lb.youBadge}><Text style={lb.youText}>you</Text></View>}
                     </View>
                     <TierPill points={entry.points} size="xs" />
