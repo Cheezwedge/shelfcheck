@@ -227,12 +227,23 @@ export async function upsertStore(name: string): Promise<string> {
 
 export interface Profile {
   id: string;
+  username: string | null;
   points: number;
   pending_points: number;
   reports_count: number;
   accuracy_ratio: number;
   streak_days: number;
   joined_at: string | null;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  username: string | null;
+  points: number;
+  reports_count: number;
+  accuracy_ratio: number;
+  joined_at: string | null;
+  rank: number;
 }
 
 /**
@@ -253,14 +264,37 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   // Map with defaults so older DB schemas (pre-migration 002) still work
   const row = data as Record<string, any>;
   return {
-    id: row.id,
-    points:         row.points         ?? 0,
-    pending_points: row.pending_points ?? 0,
-    reports_count:  row.reports_count  ?? 0,
-    accuracy_ratio: row.accuracy_ratio ?? 1,
-    streak_days:    row.streak_days    ?? 0,
-    joined_at:      row.joined_at      ?? null,
+    id:             row.id,
+    username:       row.username        ?? null,
+    points:         row.points          ?? 0,
+    pending_points: row.pending_points  ?? 0,
+    reports_count:  row.reports_count   ?? 0,
+    accuracy_ratio: row.accuracy_ratio  ?? 1,
+    streak_days:    row.streak_days     ?? 0,
+    joined_at:      row.joined_at       ?? null,
   };
+}
+
+/** Fetch the top N users by points for the leaderboard. */
+export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> {
+  const { data, error } = await supabase.rpc('fetch_leaderboard', { p_limit: limit });
+  if (error) throw error;
+  return (data as any[]).map((row, idx) => ({
+    id:             row.id,
+    username:       row.username        ?? null,
+    points:         row.points          ?? 0,
+    reports_count:  row.reports_count   ?? 0,
+    accuracy_ratio: row.accuracy_ratio  ?? 1,
+    joined_at:      row.joined_at       ?? null,
+    rank: idx + 1,
+  }));
+}
+
+/** Set the display name for the current user. */
+export async function updateUsername(userId: string, username: string): Promise<void> {
+  const trimmed = username.trim().slice(0, 30);
+  const { error } = await supabase.from('profiles').update({ username: trimmed || null }).eq('id', userId);
+  if (error) throw error;
 }
 
 // ─── Admin functions ──────────────────────────────────────────────────────────

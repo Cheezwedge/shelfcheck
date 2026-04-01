@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   ActivityIndicator,
@@ -14,7 +15,7 @@ import {
 const FEATURED_KEY = 'shelfcheck:featured_badge';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { fetchProfile, type Profile } from '../../lib/api';
+import { fetchProfile, fetchLeaderboard, updateUsername, type Profile, type LeaderboardEntry } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import {
@@ -22,30 +23,29 @@ import {
   earnedBadges,
   featuredBadge,
   heroColor,
-  profileTitle,
   RARITY_COLORS,
   RARITY_LABELS,
   type Badge,
 } from '../../lib/badges';
+import { TIERS, getTier, tierProgress } from '../../lib/tiers';
 
 const PRIMARY = '#1D9E75';
 
-// Level thresholds
-const LEVELS = [
-  { min: 0,    label: 'Newcomer',    next: 100  },
-  { min: 100,  label: 'Helper',      next: 300  },
-  { min: 300,  label: 'Scout',       next: 600  },
-  { min: 600,  label: 'Trail Blazer',next: 1000 },
-  { min: 1000, label: 'Expert',      next: 1500 },
-  { min: 1500, label: 'Champion',    next: 2500 },
-  { min: 2500, label: 'Legend',      next: 2500 },
-];
-
-function getLevelInfo(points: number) {
-  let level = LEVELS[0];
-  for (const l of LEVELS) { if (points >= l.min) level = l; }
-  return level;
+// ─── Tier pill ────────────────────────────────────────────────────────────────
+function TierPill({ points, size = 'sm' }: { points: number; size?: 'sm' | 'xs' }) {
+  const tier = getTier(points);
+  const isXs = size === 'xs';
+  return (
+    <View style={[tp.pill, { backgroundColor: tier.color + '20', borderColor: tier.color + '50' }]}>
+      <Ionicons name={tier.icon as any} size={isXs ? 9 : 11} color={tier.color} />
+      <Text style={[tp.label, { color: tier.color, fontSize: isXs ? 9 : 10 }]}>{tier.label}</Text>
+    </View>
+  );
 }
+const tp = StyleSheet.create({
+  pill:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
+  label: { fontWeight: '700' },
+});
 
 const REWARDS = [
   { id: '1', label: '$2 off',        sub: 'Any order over $20', cost: 200  },
@@ -221,10 +221,15 @@ export default function RewardsScreen() {
 
   const [profile, setProfile]             = useState<Profile | null>(null);
   const [loading, setLoading]             = useState(true);
+  const [leaderboard, setLeaderboard]     = useState<LeaderboardEntry[]>([]);
+  const [lbLoading, setLbLoading]         = useState(true);
   const [previewBadge, setPreviewBadge]   = useState<Badge | null>(null);
   const [featuredBadgeId, setFeaturedBadgeId] = useState<string | null>(() => {
     try { return localStorage.getItem(FEATURED_KEY); } catch { return null; }
   });
+  const [editingName, setEditingName]     = useState(false);
+  const [nameInput, setNameInput]         = useState('');
+  const [nameSaving, setNameSaving]       = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -236,6 +241,14 @@ export default function RewardsScreen() {
       setLoading(false);
     }
   }, [reportingId]);
+
+  const loadLeaderboard = useCallback(async () => {
+    setLbLoading(true);
+    try { setLeaderboard(await fetchLeaderboard(25)); } catch {}
+    finally { setLbLoading(false); }
+  }, []);
+
+  useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
 
   useEffect(() => {
     load();
@@ -254,10 +267,14 @@ export default function RewardsScreen() {
   const accuracyRatio = profile?.accuracy_ratio ?? 1;
   const streakDays    = profile?.streak_days    ?? 0;
   const joinedAt      = profile?.joined_at      ?? null;
-  const levelInfo     = getLevelInfo(points);
-  const progress      = levelInfo.next > 0 ? Math.min(points / levelInfo.next, 1) : 1;
+  const displayName   = profile?.username       ?? null;
+  const tier          = getTier(points);
+  const progress      = tierProgress(points);
 
-  const earned    = earnedBadges({ reports_count: reportsCount, accuracy_ratio: accuracyRatio, streak_days: streakDays, joined_at: joinedAt });
+  const myLbEntry     = leaderboard.find((e) => e.id === reportingId);
+  const myRank        = myLbEntry?.rank ?? null;
+
+  const earned    = earnedBadges({ reports_count: reportsCount, accuracy_ratio: accuracyRatio, streak_days: streakDays, joined_at: joinedAt, leaderboard_rank: myRank });
   const earnedIds = new Set(earned.map((b) => b.id));
 
   // Use the user's chosen badge if it's still earned, otherwise fall back to highest-rarity
@@ -270,6 +287,17 @@ export default function RewardsScreen() {
   function handleSetFeatured(badgeId: string) {
     setFeaturedBadgeId(badgeId);
     try { localStorage.setItem(FEATURED_KEY, badgeId); } catch {}
+  }
+
+  async function handleSaveName() {
+    if (!session?.user.id) return;
+    setNameSaving(true);
+    try {
+      await updateUsername(session.user.id, nameInput);
+      setProfile((p) => p ? { ...p, username: nameInput.trim() || null } : p);
+      setEditingName(false);
+    } catch {}
+    finally { setNameSaving(false); }
   }
 
   // Sort ALL_BADGES: earned first, then by rarity
@@ -330,6 +358,38 @@ export default function RewardsScreen() {
             )}
           </View>
 
+          {/* Display name */}
+          {!isGuest && (
+            <View style={styles.nameRow}>
+              {editingName ? (
+                <View style={styles.nameEditRow}>
+                  <TextInput
+                    style={styles.nameInput}
+                    value={nameInput}
+                    onChangeText={setNameInput}
+                    placeholder="Display name (optional)"
+                    placeholderTextColor="rgba(255,255,255,0.5)"
+                    maxLength={30}
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={handleSaveName}
+                  />
+                  <TouchableOpacity onPress={handleSaveName} disabled={nameSaving} style={styles.nameSaveBtn}>
+                    {nameSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={16} color="#fff" />}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditingName(false)} style={styles.nameCancelBtn}>
+                    <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.nameDisplay} onPress={() => { setNameInput(displayName ?? ''); setEditingName(true); }}>
+                  <Text style={styles.nameText}>{displayName ?? 'Set display name'}</Text>
+                  <Ionicons name="pencil" size={11} color="rgba(255,255,255,0.6)" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Points + pending */}
           <View style={styles.pointsRow}>
             <View>
@@ -345,17 +405,19 @@ export default function RewardsScreen() {
                 </View>
               </View>
             )}
-            <View style={styles.levelBadge}>
-              <Ionicons name="shield-checkmark" size={14} color="#fff" />
-              <Text style={styles.levelBadgeText}>Lv {LEVELS.filter((l) => points >= l.min).length} {levelInfo.label}</Text>
+            <View style={[styles.tierBadge, { backgroundColor: tier.color + '30' }]}>
+              <Ionicons name={tier.icon as any} size={13} color="#fff" />
+              <Text style={styles.tierBadgeText}>Lv {tier.level} · {tier.label}</Text>
             </View>
           </View>
 
           {/* Progress bar */}
           <View style={styles.progressSection}>
             <View style={styles.progressLabelRow}>
-              <Text style={styles.progressLabel}>Next level</Text>
-              <Text style={styles.progressLabel}>{points} / {levelInfo.next}</Text>
+              <Text style={styles.progressLabel}>
+                {tier.level < TIERS.length ? `Next: ${TIERS[tier.level]?.label ?? ''}` : 'Max tier reached'}
+              </Text>
+              <Text style={styles.progressLabel}>{points} / {tier.next}</Text>
             </View>
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
@@ -435,8 +497,65 @@ export default function RewardsScreen() {
           </>
         )}
 
+        {/* ── Leaderboard ── */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Leaderboard</Text>
+          <TouchableOpacity onPress={loadLeaderboard} hitSlop={8}>
+            <Ionicons name="refresh" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+
+        {lbLoading ? (
+          <View style={lb.loading}><ActivityIndicator color={PRIMARY} /></View>
+        ) : leaderboard.length === 0 ? (
+          <View style={lb.empty}>
+            <Ionicons name="podium-outline" size={32} color="#D1D5DB" />
+            <Text style={lb.emptyText}>No entries yet — be the first!</Text>
+          </View>
+        ) : (
+          <View style={lb.card}>
+            {leaderboard.map((entry) => {
+              const isMe = entry.id === reportingId;
+              const isFounder = entry.joined_at ? new Date(entry.joined_at) < new Date('2027-01-01') : false;
+              const name = entry.username ?? `Reporter ${entry.id.slice(-5).toUpperCase()}`;
+              const rankColor = entry.rank === 1 ? '#F59E0B' : entry.rank === 2 ? '#9CA3AF' : entry.rank === 3 ? '#B45309' : '#E5E7EB';
+              const rankText = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`;
+              return (
+                <View key={entry.id} style={[lb.row, isMe && lb.rowMe]}>
+                  <View style={[lb.rankBox, { borderColor: rankColor }]}>
+                    <Text style={[lb.rankText, entry.rank <= 3 && { fontSize: 16 }]}>{rankText}</Text>
+                  </View>
+                  <View style={lb.nameCol}>
+                    <View style={lb.nameRow}>
+                      <Text style={[lb.name, isMe && lb.nameMe]} numberOfLines={1}>{name}</Text>
+                      {isFounder && (
+                        <View style={lb.founderBadge}>
+                          <Ionicons name="leaf" size={9} color="#F59E0B" />
+                          <Text style={lb.founderText}>Founder</Text>
+                        </View>
+                      )}
+                      {isMe && <View style={lb.youBadge}><Text style={lb.youText}>you</Text></View>}
+                    </View>
+                    <TierPill points={entry.points} size="xs" />
+                  </View>
+                  <Text style={[lb.pts, isMe && lb.ptsMe]}>{entry.points.toLocaleString()} pts</Text>
+                </View>
+              );
+            })}
+
+            {/* Current user's rank if not in top 25 */}
+            {myRank && !myLbEntry && (
+              <View style={lb.myRankRow}>
+                <Ionicons name="ellipsis-horizontal" size={14} color="#9CA3AF" />
+                <Text style={lb.myRankText}>Your rank: #{myRank}</Text>
+                <Text style={lb.myRankPts}>{points.toLocaleString()} pts</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* ── Redeem ── */}
-        <Text style={styles.sectionTitle}>Redeem Rewards</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Redeem Rewards</Text>
         <View style={styles.rewardsList}>
           {REWARDS.map((r) => {
             const can = points >= r.cost;
@@ -527,8 +646,20 @@ const styles = StyleSheet.create({
   pendingBox:         { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4 },
   pendingValue:       { fontSize: 16, fontWeight: '800', color: '#FDE68A' },
   pendingLabel:       { fontSize: 10, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
-  levelBadge:         { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4, marginLeft: 'auto' as any },
-  levelBadgeText:     { fontSize: 12, fontWeight: '700', color: '#fff' },
+  tierBadge:          { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4, marginLeft: 'auto' as any },
+  tierBadgeText:      { fontSize: 12, fontWeight: '700', color: '#fff' },
+
+  // Display name
+  nameRow:            { marginBottom: 12 },
+  nameDisplay:        { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' },
+  nameText:           { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  nameEditRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nameInput:          { flex: 1, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, fontSize: 14, color: '#fff', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  nameSaveBtn:        { width: 32, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  nameCancelBtn:      { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+
+  // Section with refresh button
+  sectionHeaderRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 },
 
   // Progress
   progressSection:    { marginBottom: 16, gap: 6 },
@@ -602,6 +733,30 @@ const bc = StyleSheet.create({
   nameLocked: { color: '#9CA3AF' },
   rarityPill: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
   rarityText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' as any },
+});
+
+const lb = StyleSheet.create({
+  loading:      { paddingVertical: 32, alignItems: 'center' },
+  empty:        { paddingVertical: 32, alignItems: 'center', gap: 8 },
+  emptyText:    { fontSize: 14, color: '#9CA3AF' },
+  card:         { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden', marginBottom: 4 },
+  row:          { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  rowMe:        { backgroundColor: '#ECFDF5' },
+  rankBox:      { width: 36, height: 36, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rankText:     { fontSize: 12, fontWeight: '800', color: '#374151' },
+  nameCol:      { flex: 1, gap: 3, minWidth: 0 },
+  nameRow:      { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
+  name:         { fontSize: 14, fontWeight: '600', color: '#111827' },
+  nameMe:       { color: '#065F46' },
+  founderBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#FFFBEB', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: '#FDE68A' },
+  founderText:  { fontSize: 9, fontWeight: '800', color: '#B45309' },
+  youBadge:     { backgroundColor: '#ECFDF5', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: '#A7F3D0' },
+  youText:      { fontSize: 9, fontWeight: '800', color: '#065F46' },
+  pts:          { fontSize: 13, fontWeight: '700', color: '#6B7280', flexShrink: 0 },
+  ptsMe:        { color: '#065F46' },
+  myRankRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  myRankText:   { flex: 1, fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  myRankPts:    { fontSize: 13, fontWeight: '700', color: '#9CA3AF' },
 });
 
 const md = StyleSheet.create({

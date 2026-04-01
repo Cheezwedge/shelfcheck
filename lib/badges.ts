@@ -16,16 +16,27 @@ export interface Badge {
 
 // Sorted by display order (rarity desc within each theme)
 export const ALL_BADGES: Badge[] = [
-  // ── Early / time-based ──────────────────────────────────────────────────
+  // ── Special / limited ───────────────────────────────────────────────────
   {
     id: 'founding_reporter',
     title: 'Founding Reporter',
-    description: 'One of the original ShelfCheck contributors',
+    description: 'One of the original ShelfCheck contributors — here since the beginning',
     requirement: 'Awarded to anyone who joined before 2027. Cannot be earned after launch year.',
     icon: 'leaf',
     color: '#F59E0B',
     bg: '#FFFBEB',
     rarity: 'legendary',
+    animated: true,
+  },
+  {
+    id: 'top_reporter',
+    title: 'Top Reporter',
+    description: 'One of the top 10 contributors on ShelfCheck',
+    requirement: 'Reach the top 10 on the leaderboard.',
+    icon: 'podium',
+    color: '#8B5CF6',
+    bg: '#F5F3FF',
+    rarity: 'epic',
     animated: true,
   },
 
@@ -156,13 +167,18 @@ export function earnedBadges(profile: {
   accuracy_ratio: number;
   streak_days: number;
   joined_at: string | null;
+  leaderboard_rank?: number | null;
 }): Badge[] {
-  const { reports_count, accuracy_ratio, streak_days, joined_at } = profile;
+  const { reports_count, accuracy_ratio, streak_days, joined_at, leaderboard_rank } = profile;
   const earned: string[] = [];
 
   // Founding: joined before 2027-01-01
   if (joined_at && new Date(joined_at) < new Date('2027-01-01')) {
     earned.push('founding_reporter');
+  }
+  // Top 10 on leaderboard
+  if (leaderboard_rank != null && leaderboard_rank >= 1 && leaderboard_rank <= 10) {
+    earned.push('top_reporter');
   }
   if (reports_count >= 1)   earned.push('first_step');
   if (reports_count >= 10)  earned.push('scout');
