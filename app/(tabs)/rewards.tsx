@@ -15,7 +15,7 @@ import {
 const FEATURED_KEY = 'shelfcheck:featured_badge';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { fetchProfile, fetchLeaderboard, updateUsername, type Profile, type LeaderboardEntry } from '../../lib/api';
+import { fetchProfile, fetchLeaderboard, updateUsername, updateFeaturedBadge, type Profile, type LeaderboardEntry } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import {
@@ -289,6 +289,9 @@ export default function RewardsScreen() {
   function handleSetFeatured(badgeId: string) {
     setFeaturedBadgeId(badgeId);
     try { localStorage.setItem(FEATURED_KEY, badgeId); } catch {}
+    if (session?.user.id) {
+      updateFeaturedBadge(session.user.id, badgeId).catch(() => {});
+    }
   }
 
   async function handleSaveName() {
@@ -547,6 +550,14 @@ export default function RewardsScreen() {
                   </View>
                   <View style={lb.nameCol}>
                     <View style={lb.nameRow}>
+                      {entry.featured_badge_id && (() => {
+                        const b = ALL_BADGES.find((x) => x.id === entry.featured_badge_id);
+                        return b ? (
+                          <View style={[lb.badgeIcon, { backgroundColor: b.bg }]}>
+                            <Ionicons name={b.icon as any} size={11} color={b.color} />
+                          </View>
+                        ) : null;
+                      })()}
                       <Text style={[lb.name, isMe && lb.nameMe]} numberOfLines={1}>{name}</Text>
                       {isMe && <View style={lb.youBadge}><Text style={lb.youText}>you</Text></View>}
                     </View>
@@ -753,6 +764,7 @@ const lb = StyleSheet.create({
   nameMe:       { color: '#065F46' },
   founderBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#FFFBEB', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: '#FDE68A' },
   founderText:  { fontSize: 9, fontWeight: '800', color: '#B45309' },
+  badgeIcon:    { width: 18, height: 18, borderRadius: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
   youBadge:     { backgroundColor: '#ECFDF5', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1, borderColor: '#A7F3D0' },
   youText:      { fontSize: 9, fontWeight: '800', color: '#065F46' },
   pts:          { fontSize: 13, fontWeight: '700', color: '#6B7280', flexShrink: 0 },

@@ -241,6 +241,7 @@ export interface LeaderboardEntry {
   username: string | null;
   points: number;
   rank: number;
+  featured_badge_id: string | null;
 }
 
 /**
@@ -277,10 +278,11 @@ export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> 
   const { data, error } = await supabase.rpc('fetch_leaderboard', { p_limit: limit });
   if (error) throw error;
   return (data as any[]).map((row, idx) => ({
-    id:       row.id,
-    username: row.username ?? null,
-    points:   row.points   ?? 0,
-    rank: idx + 1,
+    id:                row.id,
+    username:          row.username          ?? null,
+    points:            row.points            ?? 0,
+    rank:              idx + 1,
+    featured_badge_id: row.featured_badge_id ?? null,
   }));
 }
 
@@ -291,6 +293,14 @@ export async function updateUsername(userId: string, username: string): Promise<
   const { error } = await supabase
     .from('profiles')
     .upsert({ id: userId, username: trimmed || null }, { onConflict: 'id' });
+  if (error) throw error;
+}
+
+/** Persist the user's chosen featured badge to their profile row. */
+export async function updateFeaturedBadge(userId: string, badgeId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({ id: userId, featured_badge_id: badgeId }, { onConflict: 'id' });
   if (error) throw error;
 }
 
