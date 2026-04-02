@@ -283,7 +283,7 @@ export default function RewardsScreen() {
   const featured  = (featuredBadgeId && earnedIds.has(featuredBadgeId))
     ? ALL_BADGES.find((b) => b.id === featuredBadgeId) ?? featuredBadge(earned)
     : featuredBadge(earned);
-  const title     = featured?.title ?? 'New Member';
+  const title     = tier.label;
   const cardColor = heroColor(featured ? [featured, ...earned.filter(b => b.id !== featured.id)] : earned);
 
   function handleSetFeatured(badgeId: string) {
@@ -369,7 +369,7 @@ export default function RewardsScreen() {
                   <Ionicons name="person-circle" size={52} color="rgba(255,255,255,0.3)" />
                 </View>
                 <View style={styles.featuredText}>
-                  <Text style={styles.featuredTitle}>New Member</Text>
+                  <Text style={styles.featuredTitle}>{tier.label}</Text>
                   <Text style={styles.featuredDesc}>Submit reports to earn your first badge</Text>
                 </View>
               </View>

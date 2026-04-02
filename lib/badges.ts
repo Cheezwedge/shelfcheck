@@ -53,7 +53,7 @@ export const ALL_BADGES: Badge[] = [
   },
   {
     id: 'scout',
-    title: 'Scout',
+    title: 'Contributor',
     description: 'A regular contributor to the community',
     requirement: 'Submit 10 confirmed reports.',
     icon: 'search',
@@ -83,7 +83,7 @@ export const ALL_BADGES: Badge[] = [
   },
   {
     id: 'legend',
-    title: 'Legend',
+    title: 'Hall of Fame',
     description: 'A ShelfCheck legend — top of the community',
     requirement: 'Submit 500 confirmed reports.',
     icon: 'trophy',
