@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const PRIMARY = '#1D9E75';
 const OCR_URL = 'https://api.ocr.space/parse/image';
-const OCR_KEY = 'helloworld'; // free demo key — 25k req/month
+const OCR_KEY = 'K89755849088957';
 
 type ScanState = 'idle' | 'processing' | 'done' | 'error';
 
