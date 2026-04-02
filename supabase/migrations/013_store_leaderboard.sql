@@ -1,4 +1,8 @@
 -- Migration 013: per-store leaderboard
+-- Step 1: add store_id to reports (if migration 002 was never run)
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS store_id uuid REFERENCES stores(id);
+
+-- Step 2: leaderboard function
 -- CTE approach avoids table.column dot notation in ON clause (prevents Supabase editor corruption)
 CREATE FUNCTION fetch_store_leaderboard(p_store_id uuid, p_limit int DEFAULT 5)
 RETURNS TABLE (id uuid, username text, report_count bigint, featured_badge_id text)
