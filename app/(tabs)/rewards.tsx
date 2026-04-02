@@ -47,12 +47,6 @@ const tp = StyleSheet.create({
   label: { fontWeight: '700' },
 });
 
-const REWARDS = [
-  { id: '1', label: '$2 off',        sub: 'Any order over $20', cost: 200  },
-  { id: '2', label: '$5 off',        sub: 'Any order over $40', cost: 500  },
-  { id: '3', label: 'Free Delivery', sub: 'One delivery order', cost: 1000 },
-];
-
 // ─── Animated badge glow component ────────────────────────────────────────────
 function GlowBadge({ badge, size = 72 }: { badge: Badge; size?: number }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -274,7 +268,7 @@ export default function RewardsScreen() {
   const reportsCount  = profile?.reports_count  ?? 0;
   const accuracyRatio = (profile as any)?.accuracy_ratio ?? 1;
   const streakDays    = (profile as any)?.streak_days    ?? 0;
-  const joinedAt      = (profile as any)?.joined_at      ?? null;
+  const joinedAt      = session?.user?.created_at ?? (profile as any)?.joined_at ?? null;
   const displayName   = profile?.username       ?? null;
   const tier          = getTier(points);
   const progress      = tierProgress(points);
@@ -574,39 +568,6 @@ export default function RewardsScreen() {
           </View>
         )}
 
-        {/* ── Redeem ── */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Redeem Rewards</Text>
-        <View style={styles.rewardsList}>
-          {REWARDS.map((r) => {
-            const can = points >= r.cost;
-            return (
-              <View key={r.id} style={styles.rewardRow}>
-                <View style={styles.rewardLeft}>
-                  <View style={[styles.rewardValueBox, !can && styles.rewardValueBoxDim]}>
-                    <Text style={[styles.rewardValue, !can && styles.rewardValueDim]}>{r.label}</Text>
-                  </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.rewardSub}>{r.sub}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Ionicons name="star" size={12} color="#F59E0B" />
-                      <Text style={styles.rewardCost}>{r.cost} pts</Text>
-                    </View>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={[styles.redeemBtn, !can && styles.redeemBtnDisabled]}
-                  activeOpacity={0.8}
-                  disabled={!can}
-                >
-                  <Text style={[styles.redeemBtnText, !can && styles.redeemBtnTextDisabled]}>
-                    {can ? 'Redeem' : 'Locked'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-
         {/* Admin panel link — only visible to admins */}
         {isAdmin && (
           <TouchableOpacity style={styles.adminBtn} onPress={() => router.push('/admin')} activeOpacity={0.8}>
@@ -754,21 +715,6 @@ const styles = StyleSheet.create({
   collectionRarity:   { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
   collectionRarityText:{ fontSize: 10, fontWeight: '700' },
   collectionDesc:     { fontSize: 12, color: '#6B7280', lineHeight: 16 },
-
-  // Rewards
-  rewardsList:        { gap: 10 },
-  rewardRow:          { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, padding: 14, justifyContent: 'space-between', borderWidth: 1, borderColor: '#E5E7EB', gap: 10 },
-  rewardLeft:         { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  rewardValueBox:     { backgroundColor: '#ECFDF5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, minWidth: 62, alignItems: 'center' },
-  rewardValueBoxDim:  { backgroundColor: '#F3F4F6' },
-  rewardValue:        { fontSize: 16, fontWeight: '800', color: PRIMARY },
-  rewardValueDim:     { color: '#9CA3AF' },
-  rewardSub:          { fontSize: 13, fontWeight: '600', color: '#111827' },
-  rewardCost:         { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
-  redeemBtn:          { backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
-  redeemBtnDisabled:  { backgroundColor: '#E5E7EB' },
-  redeemBtnText:      { fontSize: 13, fontWeight: '700', color: '#fff' },
-  redeemBtnTextDisabled: { color: '#9CA3AF' },
 
   // Featured badge change hint
   changeHint:      { flexDirection: 'row', alignItems: 'center', gap: 3, justifyContent: 'center', marginTop: 2 },
