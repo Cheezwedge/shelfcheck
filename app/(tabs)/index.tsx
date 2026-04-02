@@ -17,7 +17,8 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StockStatus, STATUS_COLORS, STATUS_LABELS, formatTimeAgo, getFreshness } from '../../data';
-import { fetchItems, upsertItem, upsertStore, DEFAULT_STORE_ID } from '../../lib/api';
+import { fetchItems, upsertItem, upsertStore, fetchStoreLeaderboard, DEFAULT_STORE_ID, type StoreLeaderboardEntry } from '../../lib/api';
+import { ALL_BADGES } from '../../lib/badges';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
 import { getSavedStore, matchChain, saveStore, type SelectedStore } from '../../lib/stores';
@@ -359,6 +360,9 @@ export default function ShopScreen() {
   // Show a nudge banner when a guest tries to add a custom item (needs account to sync)
   const [showSignInNudge, setShowSignInNudge] = useState(false);
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
+  const [storeLb, setStoreLb]           = useState<StoreLeaderboardEntry[]>([]);
+  const [storeLbLoading, setStoreLbLoading] = useState(false);
+  const [storeLbExpanded, setStoreLbExpanded] = useState(false);
 
   const sk = storeKey(selectedStore);
   const sid = selectedStore?.supabaseId ?? DEFAULT_STORE_ID;
@@ -395,6 +399,16 @@ export default function ShopScreen() {
     refresh();
     fetchItems(sid).then(setStoreItems).catch(() => {});
   }, [refresh, sid]));
+
+  // Store leaderboard — load when store changes or section is opened
+  useEffect(() => {
+    if (!storeLbExpanded || !selectedStore?.supabaseId) return;
+    setStoreLbLoading(true);
+    fetchStoreLeaderboard(selectedStore.supabaseId, 5)
+      .then(setStoreLb)
+      .catch(() => setStoreLb([]))
+      .finally(() => setStoreLbLoading(false));
+  }, [storeLbExpanded, selectedStore?.supabaseId]);
 
   // Derived state
   const activeItems = useMemo(() => listItems.filter((i) => !i.checked), [listItems]);
@@ -804,7 +818,66 @@ export default function ShopScreen() {
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           stickySectionHeadersEnabled={false}
-          ListFooterComponent={<View style={{ height: 90 }} />}
+          ListFooterComponent={
+            selectedStore?.supabaseId ? (
+              <View style={styles.storeLbSection}>
+                <TouchableOpacity
+                  style={styles.storeLbHeader}
+                  onPress={() => setStoreLbExpanded((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.storeLbHeaderLeft}>
+                    <Ionicons name="podium-outline" size={15} color={PRIMARY} />
+                    <Text style={styles.storeLbTitle}>Top Reporters Here</Text>
+                  </View>
+                  <Ionicons
+                    name={storeLbExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={15}
+                    color="#9CA3AF"
+                  />
+                </TouchableOpacity>
+
+                {storeLbExpanded && (
+                  storeLbLoading ? (
+                    <View style={styles.storeLbLoading}>
+                      <ActivityIndicator size="small" color={PRIMARY} />
+                    </View>
+                  ) : storeLb.length === 0 ? (
+                    <View style={styles.storeLbEmpty}>
+                      <Text style={styles.storeLbEmptyText}>No reports yet — be the first!</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.storeLbList}>
+                      {storeLb.map((entry, idx) => {
+                        const badge = entry.featured_badge_id
+                          ? ALL_BADGES.find((b) => b.id === entry.featured_badge_id)
+                          : null;
+                        const name = entry.username ?? `Reporter ${entry.id.slice(-4).toUpperCase()}`;
+                        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                        return (
+                          <View key={entry.id} style={styles.storeLbRow}>
+                            <Text style={styles.storeLbMedal}>{medal}</Text>
+                            {badge ? (
+                              <View style={[styles.storeLbBadge, { backgroundColor: badge.bg }]}>
+                                <Ionicons name={badge.icon as any} size={11} color={badge.color} />
+                              </View>
+                            ) : (
+                              <View style={styles.storeLbBadgePlaceholder} />
+                            )}
+                            <Text style={styles.storeLbName} numberOfLines={1}>{name}</Text>
+                            <Text style={styles.storeLbCount}>{entry.report_count} reports</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )
+                )}
+                <View style={{ height: 90 }} />
+              </View>
+            ) : (
+              <View style={{ height: 90 }} />
+            )
+          }
         />
       )}
 
@@ -954,6 +1027,22 @@ const styles = StyleSheet.create({
   emptySub:        { fontSize: 14, color: '#6B7280', textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
   findBtn:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, backgroundColor: '#ECFDF5', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: '#A7F3D0' },
   findBtnText:     { fontSize: 13, fontWeight: '600', color: PRIMARY },
+
+  // Store leaderboard
+  storeLbSection:           { marginTop: 8, marginHorizontal: 2 },
+  storeLbHeader:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  storeLbHeaderLeft:        { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  storeLbTitle:             { fontSize: 14, fontWeight: '700', color: '#111827' },
+  storeLbLoading:           { paddingVertical: 20, alignItems: 'center', backgroundColor: '#fff', borderBottomLeftRadius: 14, borderBottomRightRadius: 14, borderWidth: 1, borderTopWidth: 0, borderColor: '#E5E7EB' },
+  storeLbEmpty:             { paddingVertical: 16, alignItems: 'center', backgroundColor: '#fff', borderBottomLeftRadius: 14, borderBottomRightRadius: 14, borderWidth: 1, borderTopWidth: 0, borderColor: '#E5E7EB' },
+  storeLbEmptyText:         { fontSize: 13, color: '#9CA3AF' },
+  storeLbList:              { backgroundColor: '#fff', borderBottomLeftRadius: 14, borderBottomRightRadius: 14, borderWidth: 1, borderTopWidth: 0, borderColor: '#E5E7EB', paddingVertical: 4 },
+  storeLbRow:               { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  storeLbMedal:             { fontSize: 15, width: 24, textAlign: 'center' },
+  storeLbBadge:             { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  storeLbBadgePlaceholder:  { width: 20, height: 20 },
+  storeLbName:              { flex: 1, fontSize: 13, fontWeight: '600', color: '#111827' },
+  storeLbCount:             { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
 });
 
 const badge = StyleSheet.create({

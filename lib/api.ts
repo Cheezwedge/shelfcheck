@@ -286,6 +286,28 @@ export async function fetchLeaderboard(limit = 25): Promise<LeaderboardEntry[]> 
   }));
 }
 
+export interface StoreLeaderboardEntry {
+  id: string;
+  username: string | null;
+  report_count: number;
+  featured_badge_id: string | null;
+}
+
+/** Fetch top reporters for a specific store. */
+export async function fetchStoreLeaderboard(storeId: string, limit = 5): Promise<StoreLeaderboardEntry[]> {
+  const { data, error } = await supabase.rpc('fetch_store_leaderboard', {
+    p_store_id: storeId,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data as any[]).map((row) => ({
+    id:                row.id,
+    username:          row.username          ?? null,
+    report_count:      Number(row.report_count ?? 0),
+    featured_badge_id: row.featured_badge_id ?? null,
+  }));
+}
+
 /** Set the display name for the current user. Uses upsert so it works even
  *  if the profile row doesn't exist yet (user hasn't submitted a report). */
 export async function updateUsername(userId: string, username: string): Promise<void> {
