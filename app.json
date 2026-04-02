@@ -37,7 +37,7 @@
     "scheme": "shelfcheck",
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/shelfcheck"
+      "baseUrl": ""
     }
   }
 }
