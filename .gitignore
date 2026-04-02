@@ -9,4 +9,4 @@ node_modules/
 dist/
 .expo/
 .env.local
-*.log
+*.logsupabase/.temp/
