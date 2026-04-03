@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web --port 8081"
+    "web": "expo start --web --port 8081",
+    "db:migrate": "node scripts/migrate.js",
+    "db:list": "node scripts/migrate.js --list"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
