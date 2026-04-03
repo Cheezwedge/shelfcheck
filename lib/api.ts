@@ -404,6 +404,45 @@ export async function fetchAdminItems(storeId?: string | null): Promise<AdminIte
   }));
 }
 
+// ─── Favorite stores (cross-device sync) ─────────────────────────────────────
+
+export interface FavoriteRow { osm_id: string; name: string; address: string; }
+
+export async function fetchFavoritesFromDB(userId: string): Promise<FavoriteRow[]> {
+  const { data, error } = await supabase
+    .from('favorite_stores')
+    .select('osm_id, name, address')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data ?? []) as FavoriteRow[];
+}
+
+export async function upsertFavoriteInDB(
+  userId: string,
+  store: { osmId: string; name: string; address: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from('favorite_stores')
+    .upsert({ user_id: userId, osm_id: store.osmId, name: store.name, address: store.address });
+  if (error) throw error;
+}
+
+export async function removeFavoriteFromDB(userId: string, osmId: string): Promise<void> {
+  const { error } = await supabase
+    .from('favorite_stores')
+    .delete()
+    .eq('user_id', userId)
+    .eq('osm_id', osmId);
+  if (error) throw error;
+}
+
+/** Move pending points → confirmed points for all reports older than 4 hours. */
+export async function confirmPendingPoints(): Promise<void> {
+  await supabase.rpc('confirm_pending_reports');
+}
+
+// ─── Admin functions ──────────────────────────────────────────────────────────
+
 /** Update any combination of item fields (admin only — enforced by RLS). */
 export async function updateItem(
   itemId: string,

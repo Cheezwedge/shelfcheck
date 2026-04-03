@@ -28,6 +28,8 @@ import {
   type FavoriteStore,
   type StoreSearchResult,
 } from '../lib/stores';
+import { fetchFavoritesFromDB, upsertFavoriteInDB, removeFavoriteFromDB } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import StoreMap from './StoreMap';
 
 const PRIMARY = '#1D9E75';
@@ -50,6 +52,7 @@ async function geocodeZip(zip: string): Promise<{ lat: number; lon: number }> {
 }
 
 export default function StorePicker({ visible, onSelect, onClose }: Props) {
+  const { user } = useAuth();
   const [allStores, setAllStores] = useState<NearbyStore[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [radiusMi, setRadiusMi] = useState<number>(5);
@@ -105,6 +108,20 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
       setSearchResults(null);
       setViewMode('nearby');
       loadFromGPS(radiusMi);
+      // Sync favorites from Supabase for logged-in users
+      if (user?.id) {
+        fetchFavoritesFromDB(user.id).then((rows) => {
+          const remote: FavoriteStore[] = rows.map((r) => ({
+            osmId: r.osm_id, name: r.name, address: r.address,
+          }));
+          // Merge remote into localStorage (remote is authoritative for logged-in users)
+          const local = getFavorites();
+          const localIds = new Set(local.map((f) => f.osmId));
+          const merged = [...local, ...remote.filter((r) => !localIds.has(r.osmId))];
+          try { localStorage.setItem('shelfcheck_favorite_stores', JSON.stringify(merged)); } catch {}
+          setFavorites(merged);
+        }).catch(() => {});
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -227,13 +244,22 @@ export default function StorePicker({ visible, onSelect, onClose }: Props) {
   }
 
   function handleFavorite(store: NearbyStore) {
-    toggleFavorite({ osmId: store.osmId, name: store.name, address: store.address });
+    const fav = { osmId: store.osmId, name: store.name, address: store.address };
+    const isFav = getFavorites().some((f) => f.osmId === store.osmId);
+    toggleFavorite(fav);
     setFavorites(getFavorites());
+    if (user?.id) {
+      if (isFav) removeFavoriteFromDB(user.id, store.osmId).catch(() => {});
+      else upsertFavoriteInDB(user.id, fav).catch(() => {});
+    }
   }
 
   function handleUnfavoriteSaved(fav: FavoriteStore) {
     toggleFavorite(fav);
     setFavorites(getFavorites());
+    if (user?.id) {
+      removeFavoriteFromDB(user.id, fav.osmId).catch(() => {});
+    }
   }
 
   async function handleSelectFavorite(fav: FavoriteStore) {

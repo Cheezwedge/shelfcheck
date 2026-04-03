@@ -15,7 +15,7 @@ import {
 const FEATURED_KEY = 'shelfcheck:featured_badge';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { fetchProfile, fetchLeaderboard, updateUsername, updateFeaturedBadge, type Profile, type LeaderboardEntry } from '../../lib/api';
+import { fetchProfile, fetchLeaderboard, updateUsername, updateFeaturedBadge, confirmPendingPoints, type Profile, type LeaderboardEntry } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import {
@@ -228,6 +228,8 @@ export default function RewardsScreen() {
   const [nameSaving, setNameSaving]       = useState(false);
 
   const load = useCallback(async () => {
+    // Trigger server-side confirmation of any pending reports older than 4h
+    confirmPendingPoints().catch(() => {});
     try {
       const p = await fetchProfile(reportingId);
       setProfile(p);
