@@ -1,4 +1,4 @@
--- ─── Migration 014: Favorites sync + rate-limit enforcement ──────────────────
+-- ─── Migration 014: Favorites sync + rate-limit enforcement (v2) ─────────────
 -- Safe to re-run: all statements are idempotent.
 
 -- ─── 1. Re-enforce one report per item per user per day ───────────────────────
