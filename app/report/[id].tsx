@@ -7,16 +7,20 @@ import {
   ScrollView,
   SafeAreaView,
   ActivityIndicator,
+  Image,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchItem, upsertItem, submitReport } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import type { LiveItem } from '../../lib/types';
 
 const PRIMARY = '#1D9E75';
 const POINTS_PER_REPORT = 10;
 const PHOTO_BONUS = 15;
+const PHOTO_BUCKET = 'report-photos';
 
 export default function ReportScreen() {
   const { id, name: paramName, category: paramCategory, storeId: paramStoreId, storeName: paramStoreName } =
@@ -35,6 +39,47 @@ export default function ReportScreen() {
   const [submitted, setSubmitted] = useState(false);
   const [alreadyReported, setAlreadyReported] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [photoFile, setPhotoFile]       = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  function pickPhoto() {
+    if (Platform.OS !== 'web') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPhotoFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  function removePhoto() {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  }
+
+  async function uploadPhoto(reportId: string, userId: string): Promise<void> {
+    if (!photoFile) return;
+    setPhotoUploading(true);
+    try {
+      const ext = photoFile.name.split('.').pop() ?? 'jpg';
+      const path = `${userId}/${reportId}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from(PHOTO_BUCKET)
+        .upload(path, photoFile, { contentType: photoFile.type });
+      if (error) console.warn('Photo upload failed:', error.message);
+    } catch (e) {
+      console.warn('Photo upload error:', e);
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (id === 'new' && paramName) {
@@ -72,8 +117,10 @@ export default function ReportScreen() {
     if (!selected || !item) return;
     setSubmitting(true);
     setSubmitError(null);
+    const userId = getReportingUserId(session);
     try {
-      await submitReport(item.id, selected, getReportingUserId(session), quantityEstimate, currentStoreId);
+      const reportId = await submitReport(item.id, selected, userId, quantityEstimate, currentStoreId);
+      if (photoFile) await uploadPhoto(reportId, userId);
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {
@@ -241,17 +288,47 @@ export default function ReportScreen() {
 
         <Text style={styles.sectionLabel}>ADD EVIDENCE (OPTIONAL)</Text>
 
-        {/* Camera placeholders — compact horizontal layout */}
-        <View style={styles.evidenceRow}>
-          <TouchableOpacity style={styles.evidenceBtn} activeOpacity={0.7}>
-            <Ionicons name="camera-outline" size={18} color={PRIMARY} />
-            <Text style={styles.evidenceBtnLabel}>Shelf Photo</Text>
-            <View style={styles.bonusBadge}>
-              <Text style={styles.bonusBadgeText}>+{PHOTO_BONUS} pts</Text>
+        {/* Photo preview */}
+        {photoPreview && (
+          <View style={styles.photoPreviewWrap}>
+            <Image source={{ uri: photoPreview }} style={styles.photoPreview} resizeMode="cover" />
+            <TouchableOpacity style={styles.photoRemoveBtn} onPress={removePhoto} hitSlop={8}>
+              <Ionicons name="close-circle" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.photoBonusOverlay}>
+              <Ionicons name="star" size={11} color="#F59E0B" />
+              <Text style={styles.photoBonusText}>+{PHOTO_BONUS} pts</Text>
             </View>
+          </View>
+        )}
+
+        {/* Evidence buttons */}
+        <View style={styles.evidenceRow}>
+          <TouchableOpacity
+            style={[styles.evidenceBtn, photoPreview ? styles.evidenceBtnDone : null]}
+            onPress={pickPhoto}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={photoPreview ? 'checkmark-circle' : 'camera-outline'}
+              size={18}
+              color={photoPreview ? PRIMARY : PRIMARY}
+            />
+            <Text style={styles.evidenceBtnLabel}>
+              {photoPreview ? 'Photo Added' : 'Shelf Photo'}
+            </Text>
+            {!photoPreview && (
+              <View style={styles.bonusBadge}>
+                <Text style={styles.bonusBadgeText}>+{PHOTO_BONUS} pts</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.evidenceBtn} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.evidenceBtn}
+            onPress={() => router.push('/(tabs)/scan')}
+            activeOpacity={0.7}
+          >
             <Ionicons name="receipt-outline" size={18} color={PRIMARY} />
             <Text style={styles.evidenceBtnLabel}>Receipt Scan</Text>
             <View style={styles.bonusBadge}>
@@ -284,13 +361,20 @@ export default function ReportScreen() {
           activeOpacity={0.8}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.submitBtnText}>
+                {photoUploading ? 'Uploading photo…' : 'Submitting…'}
+              </Text>
+            </>
           ) : (
             <>
               <Text style={styles.submitBtnText}>Submit Report</Text>
               <View style={styles.submitPtsChip}>
                 <Ionicons name="star" size={12} color="#F59E0B" />
-                <Text style={styles.submitPtsText}>+{POINTS_PER_REPORT}</Text>
+                <Text style={styles.submitPtsText}>
+                  +{photoFile ? POINTS_PER_REPORT + PHOTO_BONUS : POINTS_PER_REPORT}
+                </Text>
               </View>
             </>
           )}
@@ -386,4 +470,23 @@ const styles = StyleSheet.create({
   },
   successTitle:     { fontSize: 22, fontWeight: '800', color: '#111827' },
   successSub:       { fontSize: 14, color: '#6B7280' },
+  photoPreviewWrap: {
+    position: 'relative', borderRadius: 10, overflow: 'hidden',
+    marginBottom: 10, height: 160,
+  },
+  photoPreview:     { width: '100%', height: '100%' },
+  photoRemoveBtn: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 11,
+  },
+  photoBonusOverlay: {
+    position: 'absolute', bottom: 6, left: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  photoBonusText:   { color: '#fff', fontSize: 11, fontWeight: '700' },
+  evidenceBtnDone: {
+    borderStyle: 'solid', borderColor: PRIMARY, backgroundColor: '#ECFDF5',
+  },
 });
