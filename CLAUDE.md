@@ -3,7 +3,15 @@
 ## Project Overview
 Expo/React Native app that lets users find nearby grocery stores on a map, build per-store grocery lists, and check item availability. Deployed to GitHub Pages as a static web app.
 
-**Live URL:** https://cheezwedge.github.io/shelfcheck/
+**Live URL:** https://shelfcheckapp.com/
+
+## Environment Setup (required before every build)
+The `.env` file is gitignored and must be recreated each session:
+```
+EXPO_PUBLIC_SUPABASE_URL=https://uvxuwlskpofdypwvdoxx.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2eHV3bHNrcG9mZHlwd3Zkb3h4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMjkwNDIsImV4cCI6MjA4OTkwNTA0Mn0.NjRNKefHE9aA62NTtZprkKR43Hx4QH4iZVQASo5nxhI
+```
+Always use `npx expo export --platform web --clear` to prevent stale cached bundles.
 
 ## Stack
 - Expo SDK 52 / Expo Router v4
