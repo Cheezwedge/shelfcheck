@@ -12,4 +12,3 @@ dist/
 .env.local
 *.log
 supabase/.temp/
-.supabase_applied
