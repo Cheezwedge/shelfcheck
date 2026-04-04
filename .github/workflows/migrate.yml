@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - claude/generate-preview-Y7lCy
-    paths:
-      - 'supabase/migrations/**.sql'
 
 jobs:
   migrate:
