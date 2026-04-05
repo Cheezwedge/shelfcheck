@@ -30,8 +30,6 @@ if (fs.existsSync(envPath)) {
 const DB_PASSWORD    = process.env.SUPABASE_DB_PASSWORD;
 const PROJECT_REF    = 'uvxuwlskpofdypwvdoxx';
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
-// Direct connection (no region guessing needed)
-const DB_URL         = `postgresql://postgres:${DB_PASSWORD}@db.${PROJECT_REF}.supabase.co:5432/postgres`;
 
 if (!DB_PASSWORD) {
   console.error('\nError: SUPABASE_DB_PASSWORD not set in .env or environment');
@@ -40,10 +38,19 @@ if (!DB_PASSWORD) {
 }
 
 // ─── Run SQL via psql ─────────────────────────────────────────────────────────
+const PSQL_ENV = {
+  ...process.env,
+  PGHOST:     `db.${PROJECT_REF}.supabase.co`,
+  PGPORT:     '5432',
+  PGUSER:     'postgres',
+  PGPASSWORD: DB_PASSWORD,
+  PGDATABASE: 'postgres',
+};
+
 function psql(sql) {
-  const result = cp.spawnSync('psql', [DB_URL, '-c', sql], {
+  const result = cp.spawnSync('psql', ['-c', sql], {
     encoding: 'utf8',
-    env: { ...process.env, PGPASSWORD: DB_PASSWORD },
+    env: PSQL_ENV,
   });
   if (result.error) throw new Error(`psql not found: ${result.error.message}`);
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
@@ -51,9 +58,9 @@ function psql(sql) {
 }
 
 function psqlFile(filePath) {
-  const result = cp.spawnSync('psql', [DB_URL, '-f', filePath], {
+  const result = cp.spawnSync('psql', ['-f', filePath], {
     encoding: 'utf8',
-    env: { ...process.env, PGPASSWORD: DB_PASSWORD },
+    env: PSQL_ENV,
   });
   if (result.error) throw new Error(`psql not found: ${result.error.message}`);
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
