@@ -517,18 +517,18 @@ export default function ShopScreen() {
 
   // Handlers
   async function handleAdd(name: string, category: string, itemId: string | null, brand?: string, size?: string) {
+    // New custom items require sign-in — block before touching local list
+    if (!itemId && isGuest) {
+      router.push('/auth');
+      return;
+    }
+
     // Always add to the local grocery list immediately
     addItem(sk, { name, category: category || 'General', itemId });
     refresh();
 
     // If the item already has a Supabase ID (picked from store suggestions) we're done
     if (itemId) return;
-
-    // Guest users can't write to Supabase — redirect to sign in
-    if (isGuest) {
-      router.push('/auth');
-      return;
-    }
 
     // Custom item: upsert store + item in Supabase so stock status can be reported
     try {
