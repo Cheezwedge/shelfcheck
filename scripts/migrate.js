@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Run pending Supabase migrations via psql.
- * Tracks applied migrations in a _migrations table in the DB itself.
+ * Run pending Supabase migrations via the Management API (HTTPS).
+ * Tracks applied migrations in a _migrations table in the DB.
  *
  * Usage:
  *   node scripts/migrate.js           # runs all unapplied migrations
@@ -9,14 +9,11 @@
  *   node scripts/migrate.js --list    # shows applied/pending status
  *
  * Requires in .env (or environment):
- *   SUPABASE_DB_PASSWORD   — from Supabase Dashboard → Settings → Database
- *
- * Connection uses Supabase's direct connection (port 5432).
+ *   SUPABASE_ACCESS_TOKEN  — from Supabase Dashboard → Account → Access Tokens
  */
 
-const fs    = require('fs');
-const path  = require('path');
-const cp    = require('child_process');
+const fs   = require('fs');
+const path = require('path');
 
 // ─── Load .env ────────────────────────────────────────────────────────────────
 const envPath = path.join(__dirname, '..', '.env');
@@ -27,43 +24,44 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const DB_PASSWORD    = process.env.SUPABASE_DB_PASSWORD;
+const ACCESS_TOKEN   = process.env.SUPABASE_ACCESS_TOKEN;
 const PROJECT_REF    = 'uvxuwlskpofdypwvdoxx';
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
+const API_BASE       = `https://api.supabase.com/v1/projects/${PROJECT_REF}`;
 
-if (!DB_PASSWORD) {
-  console.error('\nError: SUPABASE_DB_PASSWORD not set in .env or environment');
-  console.error('Get it from: Supabase Dashboard → Settings → Database\n');
+if (!ACCESS_TOKEN) {
+  console.error('\nError: SUPABASE_ACCESS_TOKEN not set');
+  console.error('Get one at: https://supabase.com/dashboard/account/tokens\n');
   process.exit(1);
 }
 
-// ─── Run SQL via psql ─────────────────────────────────────────────────────────
-const POOLER_HOST = process.env.SUPABASE_POOLER_HOST || `aws-0-us-east-1.pooler.supabase.com`;
-const POOLER_USER = `postgres.${PROJECT_REF}`;
-const PSQL_FLAGS  = ['-h', POOLER_HOST, '-p', '6543', '-U', POOLER_USER, '-d', 'postgres'];
-const PSQL_ENV    = { ...process.env, PGPASSWORD: DB_PASSWORD };
-
-function psql(sql) {
-  const result = cp.spawnSync('psql', [...PSQL_FLAGS, '-c', sql], {
-    encoding: 'utf8', env: PSQL_ENV,
+// ─── Execute SQL via Management API ──────────────────────────────────────────
+async function runSQL(sql) {
+  const res = await fetch(`${API_BASE}/database/query`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: sql }),
   });
-  if (result.error) throw new Error(`psql not found: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
-  return result.stdout;
-}
 
-function psqlFile(filePath) {
-  const result = cp.spawnSync('psql', [...PSQL_FLAGS, '-f', filePath], {
-    encoding: 'utf8', env: PSQL_ENV,
-  });
-  if (result.error) throw new Error(`psql not found: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
-  return result.stdout;
+  let body;
+  const text = await res.text();
+  try { body = JSON.parse(text); } catch { body = text; }
+
+  if (!res.ok) {
+    const msg = (typeof body === 'object')
+      ? (body?.message ?? body?.error ?? JSON.stringify(body))
+      : text;
+    throw new Error(`API ${res.status}: ${msg}`);
+  }
+  return body;
 }
 
 // ─── Bootstrap tracking table ─────────────────────────────────────────────────
-function ensureTrackingTable() {
-  psql(`
+async function ensureTrackingTable() {
+  await runSQL(`
     CREATE TABLE IF NOT EXISTS _migrations (
       name       text PRIMARY KEY,
       applied_at timestamptz NOT NULL DEFAULT now()
@@ -71,31 +69,28 @@ function ensureTrackingTable() {
   `);
 }
 
-function getApplied() {
-  const out = psql(`SELECT name FROM _migrations ORDER BY name;`);
-  const lines = out.split('\n').map((l) => l.trim()).filter(Boolean);
-  // psql output: header, separator, rows, count line
-  return new Set(
-    lines.filter((l) => !l.startsWith('name') && !l.startsWith('---') && !l.match(/^\(\d+ rows?\)$/))
-  );
+async function getApplied() {
+  const rows = await runSQL(`SELECT name FROM _migrations ORDER BY name;`);
+  return new Set((rows ?? []).map((r) => r.name));
 }
 
-function markApplied(name) {
-  psql(`INSERT INTO _migrations (name) VALUES ('${name}') ON CONFLICT DO NOTHING;`);
+async function markApplied(name) {
+  await runSQL(`INSERT INTO _migrations (name) VALUES ('${name}') ON CONFLICT DO NOTHING;`);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2);
 
-  ensureTrackingTable();
+  console.log('Connecting via Supabase Management API...');
+  await ensureTrackingTable();
 
   const all = fs.readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
   if (args.includes('--list')) {
-    const applied = getApplied();
+    const applied = await getApplied();
     console.log('\nMigrations:');
     all.forEach((f) => console.log(`  ${applied.has(f) ? '✓' : '○'} ${f}`));
     console.log('');
@@ -103,24 +98,24 @@ async function main() {
   }
 
   const filter  = args[0];
-  const applied = getApplied();
+  const applied = await getApplied();
   const toRun   = filter
     ? all.filter((f) => f.startsWith(filter))
     : all.filter((f) => !applied.has(f));
 
   if (toRun.length === 0) {
-    console.log('\nAll migrations already applied. Nothing to do.\n');
+    console.log('All migrations already applied. Nothing to do.');
     return;
   }
 
   console.log(`\nRunning ${toRun.length} migration(s):\n`);
 
   for (const file of toRun) {
-    const filePath = path.join(MIGRATIONS_DIR, file);
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
     process.stdout.write(`  → ${file} ... `);
     try {
-      psqlFile(filePath);
-      markApplied(file);
+      await runSQL(sql);
+      await markApplied(file);
       console.log('✓ done');
     } catch (e) {
       console.log(`✗ FAILED\n\n${e.message}\n`);
