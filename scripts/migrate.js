@@ -38,10 +38,13 @@ if (!DB_PASSWORD) {
 }
 
 // ─── Run SQL via psql ─────────────────────────────────────────────────────────
+// Try transaction pooler port (6543) which uses postgres.PROJECT_REF username.
+// SUPABASE_POOLER_HOST can override if the region differs.
+const POOLER_HOST = process.env.SUPABASE_POOLER_HOST || `aws-0-us-east-1.pooler.supabase.com`;
 const PSQL_ENV = {
   ...process.env,
-  PGHOST:     `aws-0-us-east-1.pooler.supabase.com`,
-  PGPORT:     '5432',
+  PGHOST:     POOLER_HOST,
+  PGPORT:     '6543',
   PGUSER:     `postgres.${PROJECT_REF}`,
   PGPASSWORD: DB_PASSWORD,
   PGDATABASE: 'postgres',
