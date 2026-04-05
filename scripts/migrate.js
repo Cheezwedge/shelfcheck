@@ -38,22 +38,14 @@ if (!DB_PASSWORD) {
 }
 
 // ─── Run SQL via psql ─────────────────────────────────────────────────────────
-// Try transaction pooler port (6543) which uses postgres.PROJECT_REF username.
-// SUPABASE_POOLER_HOST can override if the region differs.
 const POOLER_HOST = process.env.SUPABASE_POOLER_HOST || `aws-0-us-east-1.pooler.supabase.com`;
-const PSQL_ENV = {
-  ...process.env,
-  PGHOST:     POOLER_HOST,
-  PGPORT:     '6543',
-  PGUSER:     `postgres.${PROJECT_REF}`,
-  PGPASSWORD: DB_PASSWORD,
-  PGDATABASE: 'postgres',
-};
+const POOLER_USER = `postgres.${PROJECT_REF}`;
+const PSQL_FLAGS  = ['-h', POOLER_HOST, '-p', '6543', '-U', POOLER_USER, '-d', 'postgres'];
+const PSQL_ENV    = { ...process.env, PGPASSWORD: DB_PASSWORD };
 
 function psql(sql) {
-  const result = cp.spawnSync('psql', ['-c', sql], {
-    encoding: 'utf8',
-    env: PSQL_ENV,
+  const result = cp.spawnSync('psql', [...PSQL_FLAGS, '-c', sql], {
+    encoding: 'utf8', env: PSQL_ENV,
   });
   if (result.error) throw new Error(`psql not found: ${result.error.message}`);
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
@@ -61,9 +53,8 @@ function psql(sql) {
 }
 
 function psqlFile(filePath) {
-  const result = cp.spawnSync('psql', ['-f', filePath], {
-    encoding: 'utf8',
-    env: PSQL_ENV,
+  const result = cp.spawnSync('psql', [...PSQL_FLAGS, '-f', filePath], {
+    encoding: 'utf8', env: PSQL_ENV,
   });
   if (result.error) throw new Error(`psql not found: ${result.error.message}`);
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'psql error');
