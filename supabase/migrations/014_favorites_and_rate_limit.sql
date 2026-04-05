@@ -4,6 +4,18 @@
 -- ─── 1. Re-enforce one report per item per user per day ───────────────────────
 -- Drop old index (may have been created without the WHERE clause which means
 -- NULL user_ids could bypass it). Recreate with user_id IS NOT NULL guard.
+-- Remove duplicate reports (same item + user + day), keeping only the earliest.
+-- Required before the unique index can be created.
+DELETE FROM reports
+WHERE user_id IS NOT NULL
+  AND id NOT IN (
+    SELECT DISTINCT ON (item_id, user_id, (created_at AT TIME ZONE 'UTC')::date)
+      id
+    FROM reports
+    WHERE user_id IS NOT NULL
+    ORDER BY item_id, user_id, (created_at AT TIME ZONE 'UTC')::date, created_at ASC
+  );
+
 DROP INDEX IF EXISTS reports_one_per_day;
 CREATE UNIQUE INDEX IF NOT EXISTS reports_one_per_day
   ON reports (item_id, user_id, ((created_at AT TIME ZONE 'UTC')::date))
