@@ -210,7 +210,7 @@ function BadgeDetailModal({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function RewardsScreen() {
   const router = useRouter();
-  const { session, isGuest, isAdmin } = useAuth();
+  const { session, isGuest, isAdmin, loading: authLoading } = useAuth();
   const reportingId = getReportingUserId(session);
 
   const [profile, setProfile]             = useState<Profile | null>(null);
@@ -255,6 +255,9 @@ export default function RewardsScreen() {
   useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
 
   useEffect(() => {
+    // Wait for auth to finish restoring the session before loading the profile.
+    // Without this, on refresh session=null briefly and we'd fetch the guest profile.
+    if (authLoading) return;
     load();
     const channel = supabase
       .channel(`profile-live-${reportingId}`)
@@ -263,7 +266,7 @@ export default function RewardsScreen() {
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [load, reportingId]);
+  }, [load, reportingId, authLoading]);
 
   const points        = profile?.points        ?? 0;
   const pendingPts    = profile?.pending_points ?? 0;
