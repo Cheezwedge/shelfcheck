@@ -40,9 +40,9 @@ if (!DB_PASSWORD) {
 // ─── Run SQL via psql ─────────────────────────────────────────────────────────
 const PSQL_ENV = {
   ...process.env,
-  PGHOST:     process.env.SUPABASE_IPV4 || `db.${PROJECT_REF}.supabase.co`,
+  PGHOST:     `aws-0-us-east-1.pooler.supabase.com`,
   PGPORT:     '5432',
-  PGUSER:     'postgres',
+  PGUSER:     `postgres.${PROJECT_REF}`,
   PGPASSWORD: DB_PASSWORD,
   PGDATABASE: 'postgres',
 };
