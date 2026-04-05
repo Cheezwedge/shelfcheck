@@ -11,10 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Force IPv4 (Supabase direct connection requires it)
-        run: sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1
+      - name: Resolve Supabase IPv4 address
+        run: |
+          IPV4=$(getent ahostsv4 db.uvxuwlskpofdypwvdoxx.supabase.co | awk 'NR==1{print $1}')
+          echo "Resolved to: $IPV4"
+          echo "SUPABASE_IPV4=$IPV4" >> $GITHUB_ENV
 
       - name: Run pending migrations
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_IPV4: ${{ env.SUPABASE_IPV4 }}
         run: node scripts/migrate.js
