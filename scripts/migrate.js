@@ -67,6 +67,30 @@ async function ensureTrackingTable() {
       applied_at timestamptz NOT NULL DEFAULT now()
     );
   `);
+
+  // If the table is empty, migrations 001–013 were applied manually before
+  // this tracking system existed. Seed them so they aren't re-run.
+  const rows = await runSQL(`SELECT COUNT(*) AS n FROM _migrations;`);
+  if (Number(rows?.[0]?.n ?? 0) === 0) {
+    console.log('Seeding previously-applied migrations 001–013...');
+    const ALREADY_APPLIED = [
+      '001_abuse_prevention.sql',
+      '002_provisional_points_and_store_cap.sql',
+      '003_admin.sql',
+      '004_quantity.sql',
+      '005_quantity_in_view.sql',
+      '006_chain_catalog.sql',
+      '007_items_insert_fix.sql',
+      '008_stores_insert_fix.sql',
+      '009_brand_size.sql',
+      '010_leaderboard.sql',
+      '011_enable_rls.sql',
+      '012_featured_badge.sql',
+      '013_store_leaderboard.sql',
+    ];
+    const values = ALREADY_APPLIED.map((n) => `('${n}')`).join(', ');
+    await runSQL(`INSERT INTO _migrations (name) VALUES ${values} ON CONFLICT DO NOTHING;`);
+  }
 }
 
 async function getApplied() {
