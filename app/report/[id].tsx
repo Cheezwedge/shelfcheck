@@ -16,6 +16,7 @@ import { fetchItem, upsertItem, submitReport } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import type { LiveItem } from '../../lib/types';
+import { updateUsername } from '../../lib/api';
 
 const PRIMARY = '#1D9E75';
 const POINTS_PER_REPORT = 10;
@@ -23,11 +24,11 @@ const PHOTO_BONUS = 15;
 const PHOTO_BUCKET = 'report-photos';
 
 export default function ReportScreen() {
-  const { id, name: paramName, category: paramCategory, storeId: paramStoreId, storeName: paramStoreName } =
-    useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string; storeName?: string }>();
+  const { id, name: paramName, category: paramCategory, storeId: paramStoreId, storeName: paramStoreName, storeAddress: paramStoreAddress } =
+    useLocalSearchParams<{ id: string; name?: string; category?: string; storeId?: string; storeName?: string; storeAddress?: string }>();
   const currentStoreId = paramStoreId ?? null;
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, isGuest } = useAuth();
 
   const [item, setItem] = useState<LiveItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,13 @@ export default function ReportScreen() {
   const [photoFile, setPhotoFile]       = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+
+  // Username gate — shown for logged-in users who haven't set a name yet
+  const [usernameChecked, setUsernameChecked] = useState(false);
+  const [needsUsername, setNeedsUsername] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('');
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
 
   function pickPhoto() {
     if (Platform.OS !== 'web') return;
@@ -112,6 +120,32 @@ export default function ReportScreen() {
         .finally(() => setLoading(false));
     }
   }, [id, paramName, paramCategory, paramStoreId]);
+
+  // Check if logged-in user has set a display name
+  useEffect(() => {
+    if (isGuest || !session?.user.id) { setUsernameChecked(true); return; }
+    import('../../lib/api').then(({ fetchProfile }) =>
+      fetchProfile(session.user.id).then((p) => {
+        setNeedsUsername(!p?.username);
+        setUsernameChecked(true);
+      }).catch(() => setUsernameChecked(true))
+    );
+  }, [session?.user.id, isGuest]);
+
+  async function handleSaveUsername() {
+    const trimmed = usernameInput.trim();
+    if (!trimmed) { setUsernameError('Please enter a display name.'); return; }
+    if (!session?.user.id) return;
+    setUsernameSaving(true);
+    setUsernameError(null);
+    try {
+      await updateUsername(session.user.id, trimmed);
+      setNeedsUsername(false);
+    } catch (e: any) {
+      setUsernameError(e?.message ?? 'Could not save name.');
+      setUsernameSaving(false);
+    }
+  }
 
   const handleSubmit = async () => {
     if (!selected || !item) return;
@@ -204,10 +238,79 @@ export default function ReportScreen() {
     );
   }
 
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  if (isGuest) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Ionicons name="lock-closed-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.notTrackedTitle}>Sign in to report</Text>
+          <Text style={styles.notTrackedSub}>
+            Create a free account to submit stock reports and earn points.
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/auth')} activeOpacity={0.8}>
+            <Text style={styles.backBtnText}>Sign In / Create Account</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8} style={{ marginTop: 12 }}>
+            <Text style={{ color: '#9CA3AF', fontSize: 14 }}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Username gate ─────────────────────────────────────────────────────────
+  if (usernameChecked && needsUsername) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Ionicons name="person-circle-outline" size={48} color={PRIMARY} />
+          <Text style={styles.notTrackedTitle}>Set your display name</Text>
+          <Text style={styles.notTrackedSub}>
+            Choose a name that appears on leaderboards before submitting reports.
+          </Text>
+          <TextInput
+            style={styles.usernameInput}
+            placeholder="Your display name"
+            placeholderTextColor="#9CA3AF"
+            value={usernameInput}
+            onChangeText={(t) => { setUsernameInput(t); setUsernameError(null); }}
+            maxLength={30}
+            autoFocus
+            autoCapitalize="words"
+          />
+          {usernameError && <Text style={styles.usernameError}>{usernameError}</Text>}
+          <TouchableOpacity
+            style={[styles.backBtn, usernameSaving && { backgroundColor: '#9CA3AF' }]}
+            onPress={handleSaveUsername}
+            disabled={usernameSaving}
+            activeOpacity={0.8}
+          >
+            {usernameSaving
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={styles.backBtnText}>Save &amp; Continue</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // ── Main form ────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Store context chip */}
+        {(paramStoreName || paramStoreAddress) && (
+          <View style={styles.storeChip}>
+            <Ionicons name="storefront-outline" size={13} color="#6B7280" />
+            <View>
+              {paramStoreName ? <Text style={styles.storeChipText}>{paramStoreName}</Text> : null}
+              {paramStoreAddress ? <Text style={styles.storeChipAddr}>{paramStoreAddress}</Text> : null}
+            </View>
+          </View>
+        )}
 
         {/* Item header */}
         <View style={styles.itemHeader}>
@@ -470,6 +573,19 @@ const styles = StyleSheet.create({
   },
   successTitle:     { fontSize: 22, fontWeight: '800', color: '#111827' },
   successSub:       { fontSize: 14, color: '#6B7280' },
+  usernameInput: {
+    width: '100%', height: 48, borderWidth: 1.5, borderColor: '#D1D5DB',
+    borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: '#111827',
+    backgroundColor: '#fff', marginTop: 4,
+  },
+  usernameError:  { fontSize: 12, color: '#EF4444', alignSelf: 'flex-start' },
+  storeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    marginBottom: 14, alignSelf: 'flex-start',
+  },
+  storeChipText:  { fontSize: 12, color: '#374151', fontWeight: '500' },
+  storeChipAddr:  { fontSize: 11, color: '#9CA3AF' },
   photoPreviewWrap: {
     position: 'relative', borderRadius: 10, overflow: 'hidden',
     marginBottom: 10, height: 160,

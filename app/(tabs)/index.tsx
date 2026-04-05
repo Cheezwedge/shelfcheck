@@ -21,7 +21,8 @@ import { fetchItems, upsertItem, upsertStore, fetchStoreLeaderboard, DEFAULT_STO
 import { ALL_BADGES } from '../../lib/badges';
 import { supabase } from '../../lib/supabase';
 import type { LiveItem } from '../../lib/types';
-import { getSavedStore, matchChain, saveStore, type SelectedStore } from '../../lib/stores';
+import { getSavedStore, matchChain, saveStore, getFavorites, toggleFavorite, type SelectedStore } from '../../lib/stores';
+import { upsertFavoriteInDB, removeFavoriteFromDB } from '../../lib/api';
 import { getSampleItems } from '../../lib/sampleItems';
 import {
   getList,
@@ -348,7 +349,24 @@ export default function ShopScreen() {
   const router = useRouter();
   const { isGuest, session } = useAuth();
 
+  function handleToggleFav() {
+    if (!selectedStore) return;
+    const fav = { osmId: selectedStore.osmId, name: selectedStore.name, address: selectedStore.address };
+    const nowFav = !isFav;
+    toggleFavorite(fav);
+    setIsFav(nowFav);
+    if (session?.user.id) {
+      if (nowFav) upsertFavoriteInDB(session.user.id, fav).catch(() => {});
+      else removeFavoriteFromDB(session.user.id, selectedStore.osmId).catch(() => {});
+    }
+  }
+
   const [selectedStore, setSelectedStore] = useState<SelectedStore | null>(() => getSavedStore());
+  const [isFav, setIsFav] = useState<boolean>(() => {
+    const saved = getSavedStore();
+    if (!saved?.osmId) return false;
+    return getFavorites().some((f) => f.osmId === saved.osmId);
+  });
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
   const [storeItemsLoading, setStoreItemsLoading] = useState(false);
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
@@ -506,9 +524,9 @@ export default function ShopScreen() {
     // If the item already has a Supabase ID (picked from store suggestions) we're done
     if (itemId) return;
 
-    // Guest users can't write to Supabase — show a sign-in nudge and stop here
+    // Guest users can't write to Supabase — redirect to sign in
     if (isGuest) {
-      setShowSignInNudge(true);
+      router.push('/auth');
       return;
     }
 
@@ -555,7 +573,7 @@ export default function ShopScreen() {
     if (row.live) {
       router.push({
         pathname: '/report/[id]',
-        params: { id: row.live.id, storeId: currentStoreId },
+        params: { id: row.live.id, storeId: currentStoreId, storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
       });
       return;
     }
@@ -568,7 +586,7 @@ export default function ShopScreen() {
       if (!sid) {
         router.push({
           pathname: '/report/[id]',
-          params: { id: 'new', name: row.list.name, category: row.list.category, storeId: '', storeName: selectedStore?.name ?? '' },
+          params: { id: 'new', name: row.list.name, category: row.list.category, storeId: '', storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
         });
         return;
       }
@@ -576,7 +594,7 @@ export default function ShopScreen() {
       fetchItems(sid).then(setStoreItems).catch(() => {});
       router.push({
         pathname: '/report/[id]',
-        params: { id: itemId, storeId: sid },
+        params: { id: itemId, storeId: sid, storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
       });
     } catch (err: unknown) {
       // upsertStore or upsertItem failed (usually RLS). Show an informative alert
@@ -664,7 +682,7 @@ export default function ShopScreen() {
         <View style={styles.storeRow}>
           <TouchableOpacity
             style={styles.storeRowMain}
-            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.live.id, storeId: selectedStore?.supabaseId ?? '' } })}
+            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.live.id, storeId: selectedStore?.supabaseId ?? '', storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' } })}
             activeOpacity={0.7}
           >
             <Text style={styles.rowName} numberOfLines={2}>{item.live.name}</Text>
@@ -719,6 +737,11 @@ export default function ShopScreen() {
           ) : null}
         </TouchableOpacity>
         <View style={styles.headerRight}>
+          {selectedStore && (
+            <TouchableOpacity onPress={handleToggleFav} hitSlop={8} style={styles.lbBtn}>
+              <Ionicons name={isFav ? 'star' : 'star-outline'} size={20} color={isFav ? '#F59E0B' : '#9CA3AF'} />
+            </TouchableOpacity>
+          )}
           {selectedStore?.supabaseId && (
             <TouchableOpacity
               style={styles.lbBtn}
@@ -741,7 +764,10 @@ export default function ShopScreen() {
         onClose={() => setPickerVisible(false)}
         onSelect={() => {
           const saved = getSavedStore();
-          if (saved) setSelectedStore(saved);
+          if (saved) {
+            setSelectedStore(saved);
+            setIsFav(getFavorites().some((f) => f.osmId === saved.osmId));
+          }
         }}
       />
 

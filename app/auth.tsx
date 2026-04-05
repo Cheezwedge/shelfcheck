@@ -13,7 +13,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
-import { fetchProfile } from '../lib/api';
+import { fetchProfile, updateUsername } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { getDeviceId } from '../lib/identity';
 
 const PRIMARY = '#1D9E75';
@@ -33,6 +34,14 @@ export default function AuthScreen() {
   // Claim-points prompt state (shown after sign-up if device has points)
   const [claimState, setClaimState] = useState<{ points: number } | null>(null);
   const [claiming, setClaiming] = useState(false);
+
+  // Display name step (required after sign-up)
+  const [showNameStep, setShowNameStep] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  // Store user id for the name-save step
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
 
   const validate = (): string | null => {
     if (!email.trim()) return 'Email is required.';
@@ -54,12 +63,14 @@ export default function AuthScreen() {
         router.back();
       } else {
         await signUp(email.trim(), password);
+        const { data: sd } = await supabase.auth.getSession();
+        setPendingUserId(sd.session?.user?.id ?? null);
         // Check if this device has guest points to claim
         const guestProfile = await fetchProfile(getDeviceId());
         if (guestProfile && guestProfile.points > 0) {
           setClaimState({ points: guestProfile.points });
         } else {
-          router.back();
+          setShowNameStep(true);
         }
       }
     } catch (e: any) {
@@ -75,7 +86,23 @@ export default function AuthScreen() {
       if (claim) await claimGuestPoints();
     } finally {
       setClaiming(false);
+      setClaimState(null);
+      setShowNameStep(true);
+    }
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) { setNameError('Please enter a display name.'); return; }
+    if (!pendingUserId) { router.back(); return; }
+    setNameSaving(true);
+    setNameError(null);
+    try {
+      await updateUsername(pendingUserId, trimmed);
       router.back();
+    } catch (e: any) {
+      setNameError(e?.message ?? 'Could not save name. Try again.');
+      setNameSaving(false);
     }
   };
 
@@ -104,6 +131,45 @@ export default function AuthScreen() {
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleClaim(false)} disabled={claiming}>
             <Text style={styles.claimSkip}>Skip, start fresh</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Display name step (required after sign-up) ──────────────────────────
+  if (showNameStep) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.claimBox}>
+          <View style={styles.claimIcon}>
+            <Ionicons name="person-circle-outline" size={40} color={PRIMARY} />
+          </View>
+          <Text style={styles.claimTitle}>Choose your display name</Text>
+          <Text style={styles.claimSub}>
+            This is how you'll appear on leaderboards. You can change it later.
+          </Text>
+          <TextInput
+            style={[styles.nameInput, nameError ? styles.nameInputError : null]}
+            placeholder="e.g. Alex, ShopperJane, …"
+            placeholderTextColor="#9CA3AF"
+            value={nameInput}
+            onChangeText={(t) => { setNameInput(t); setNameError(null); }}
+            maxLength={30}
+            autoFocus
+            autoCapitalize="words"
+          />
+          {nameError && <Text style={styles.nameErrorText}>{nameError}</Text>}
+          <TouchableOpacity
+            style={[styles.claimYesBtn, nameSaving && styles.submitBtnDisabled]}
+            onPress={handleSaveName}
+            disabled={nameSaving}
+            activeOpacity={0.85}
+          >
+            {nameSaving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.claimYesBtnText}>Save &amp; Continue</Text>
+            }
           </TouchableOpacity>
         </View>
       </View>
@@ -247,4 +313,11 @@ const styles = StyleSheet.create({
   claimYesBtn:     { backgroundColor: PRIMARY, borderRadius: 14, height: 52, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', width: '100%' },
   claimYesBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   claimSkip:       { fontSize: 14, color: '#9CA3AF', marginTop: 8 },
+  nameInput: {
+    width: '100%', height: 48, borderWidth: 1.5, borderColor: '#D1D5DB',
+    borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: '#111827',
+    backgroundColor: '#fff', marginTop: 4,
+  },
+  nameInputError: { borderColor: '#EF4444' },
+  nameErrorText:  { fontSize: 12, color: '#EF4444', alignSelf: 'flex-start' },
 });
