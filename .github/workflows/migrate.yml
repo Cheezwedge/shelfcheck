@@ -14,4 +14,7 @@ jobs:
       - name: Run pending migrations
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: node scripts/migrate.js
+        run: |
+          echo "Node version: $(node --version)"
+          echo "psql version: $(psql --version)"
+          node scripts/migrate.js

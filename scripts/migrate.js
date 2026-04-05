@@ -30,7 +30,8 @@ if (fs.existsSync(envPath)) {
 const DB_PASSWORD    = process.env.SUPABASE_DB_PASSWORD;
 const PROJECT_REF    = 'uvxuwlskpofdypwvdoxx';
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
-const DB_URL         = `postgresql://postgres.${PROJECT_REF}:${DB_PASSWORD}@aws-0-us-west-1.pooler.supabase.com:6543/postgres`;
+// Direct connection (no region guessing needed)
+const DB_URL         = `postgresql://postgres:${DB_PASSWORD}@db.${PROJECT_REF}.supabase.co:5432/postgres`;
 
 if (!DB_PASSWORD) {
   console.error('\nError: SUPABASE_DB_PASSWORD not set in .env or environment');
