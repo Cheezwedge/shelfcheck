@@ -6,7 +6,7 @@
 -- NULL user_ids could bypass it). Recreate with user_id IS NOT NULL guard.
 DROP INDEX IF EXISTS reports_one_per_day;
 CREATE UNIQUE INDEX IF NOT EXISTS reports_one_per_day
-  ON reports (item_id, user_id, (created_at::date))
+  ON reports (item_id, user_id, ((created_at AT TIME ZONE 'UTC')::date))
   WHERE user_id IS NOT NULL;
 
 -- ─── 2. Favorite stores table for cross-device sync ───────────────────────────
