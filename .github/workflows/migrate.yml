@@ -11,10 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Force IPv4 (Supabase direct connection requires it)
+        run: sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 net.ipv6.conf.default.disable_ipv6=1
+
       - name: Run pending migrations
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          echo "Node version: $(node --version)"
-          echo "psql version: $(psql --version)"
-          node scripts/migrate.js
+        run: node scripts/migrate.js
