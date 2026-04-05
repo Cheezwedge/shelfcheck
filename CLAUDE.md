@@ -30,20 +30,23 @@ Always use `npx expo export --platform web --clear` to prevent stale cached bund
 ### Every deploy must follow these steps exactly:
 ```bash
 # 1. Build
-npx expo export --platform web
+npx expo export --platform web --clear
 
-# 2. Check old bundle name (in repo root)
+# 2. Create 404.html for SPA routing (prevents refresh 404s on sub-routes)
+cp dist/index.html dist/404.html
+
+# 3. Check old bundle name (in repo root)
 ls _expo/static/js/web/ | grep entry
 
-# 3. Check new bundle name (in dist/)
+# 4. Check new bundle name (in dist/)
 ls dist/_expo/static/js/web/ | grep entry
 
-# 4. Remove old bundle, copy new dist
+# 5. Remove old bundle, copy new dist
 git rm -f _expo/static/js/web/entry-<OLD_HASH>.js
 cp -r dist/. .
 
-# 5. Stage
-git add -f _expo/ index.html metadata.json
+# 6. Stage
+git add -f _expo/ index.html 404.html metadata.json
 
 # 6. Commit & push to both branches
 git commit -m "description"
