@@ -519,7 +519,14 @@ export default function ShopScreen() {
   async function handleAdd(name: string, category: string, itemId: string | null, brand?: string, size?: string) {
     // New custom items require sign-in — block before touching local list
     if (!itemId && isGuest) {
-      router.push('/auth');
+      Alert.alert(
+        'Sign in required',
+        'Create a free account to add new items and submit stock reports.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Sign In', onPress: () => router.push('/auth') },
+        ]
+      );
       return;
     }
 

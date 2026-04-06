@@ -42,6 +42,8 @@ export default function AuthScreen() {
   const [nameError, setNameError] = useState<string | null>(null);
   // Store user id for the name-save step
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Shown when Supabase requires email confirmation before a session is created
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState(false);
 
   const validate = (): string | null => {
     if (!email.trim()) return 'Email is required.';
@@ -60,12 +62,24 @@ export default function AuthScreen() {
     try {
       if (mode === 'signin') {
         await signIn(email.trim(), password);
-        router.back();
+        router.replace('/(tabs)');
       } else {
         await signUp(email.trim(), password);
         const { data: sd } = await supabase.auth.getSession();
-        setPendingUserId(sd.session?.user?.id ?? null);
-        // Check if this device has guest points to claim
+        const userId = sd.session?.user?.id ?? null;
+        setPendingUserId(userId);
+
+        // If no session, email confirmation is required — show check-email screen
+        if (!userId) {
+          setShowNameStep(false);
+          setClaimState(null);
+          setError(null);
+          // Re-use showNameStep=false + a dedicated state to show the email-pending screen
+          setPendingConfirmEmail(true);
+          return;
+        }
+
+        // Session exists (email confirmation disabled) — check for guest points
         const guestProfile = await fetchProfile(getDeviceId());
         if (guestProfile && guestProfile.points > 0) {
           setClaimState({ points: guestProfile.points });
@@ -131,6 +145,37 @@ export default function AuthScreen() {
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleClaim(false)} disabled={claiming}>
             <Text style={styles.claimSkip}>Skip, start fresh</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Email confirmation pending ───────────────────────────────────────────
+  if (pendingConfirmEmail) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.claimBox}>
+          <View style={styles.claimIcon}>
+            <Ionicons name="mail-outline" size={40} color={PRIMARY} />
+          </View>
+          <Text style={styles.claimTitle}>Check your email</Text>
+          <Text style={styles.claimSub}>
+            We sent a confirmation link to{'\n'}<Text style={{ fontWeight: '700', color: '#111827' }}>{email}</Text>.{'\n\n'}
+            Click the link to activate your account, then come back and sign in.
+          </Text>
+          <TouchableOpacity
+            style={styles.claimYesBtn}
+            onPress={() => { setPendingConfirmEmail(false); setMode('signin'); }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.claimYesBtnText}>Go to Sign In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
+            style={{ marginTop: 8 }}
+          >
+            <Text style={styles.claimSkip}>Continue as Guest</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -273,7 +318,10 @@ export default function AuthScreen() {
         </TouchableOpacity>
 
         {/* Guest option */}
-        <TouchableOpacity style={styles.guestBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.guestBtn}
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
+        >
           <Text style={styles.guestBtnText}>Continue as Guest</Text>
         </TouchableOpacity>
 

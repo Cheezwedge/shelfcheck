@@ -3,6 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { getDeviceId } from './identity';
 import { fetchProfile } from './api';
+import { clearFavorites } from './stores';
 
 interface AuthContextValue {
   session: Session | null;
@@ -41,10 +42,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Keep session state in sync
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       if (newSession?.user.id) loadAdminFlag(newSession.user.id);
-      else setIsAdmin(false);
+      else {
+        setIsAdmin(false);
+        if (event === 'SIGNED_OUT') clearFavorites();
+      }
     });
 
     return () => { listener.subscription.unsubscribe(); };
@@ -56,7 +60,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signUp(email: string, password: string) {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: 'https://shelfcheckapp.com' },
+    });
     if (error) throw error;
   }
 

@@ -200,6 +200,10 @@ export function toggleFavorite(store: FavoriteStore): void {
   try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); } catch {}
 }
 
+export function clearFavorites(): void {
+  try { localStorage.removeItem(FAVORITES_KEY); } catch {}
+}
+
 // ─── Free-text store name search (not limited to allowed chains) ───────────────
 export interface StoreSearchResult {
   osmId: string;
