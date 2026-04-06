@@ -1,8 +1,9 @@
-import { Tabs, useRouter } from 'expo-router';
-import { TouchableOpacity, Alert, Platform } from 'react-native';
+import { Tabs } from 'expo-router';
+import { TouchableOpacity, Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../lib/auth';
+import AccountSheet from '../../components/AccountSheet';
 
 const PRIMARY = '#1D9E75';
 const INACTIVE = '#9CA3AF';
@@ -11,8 +12,6 @@ function useWebSafeAreaBottom(): number {
   const [bottom, setBottom] = useState(0);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    // Probe the actual computed pixel value of env(safe-area-inset-bottom)
-    // by measuring a fixed-position element whose height equals the env() value.
     const probe = document.createElement('div');
     probe.style.cssText =
       'position:fixed;bottom:0;left:0;width:1px;' +
@@ -26,27 +25,13 @@ function useWebSafeAreaBottom(): number {
 }
 
 export default function TabLayout() {
-  const router = useRouter();
-  const { isGuest, signOut } = useAuth();
+  const { isGuest } = useAuth();
   const safeBottom = useWebSafeAreaBottom();
-
-  const handleAccountPress = () => {
-    if (isGuest) {
-      router.push('/auth');
-    } else if (Platform.OS === 'web') {
-      // Alert.alert maps to window.alert on web which doesn't support buttons
-      if ((window as any).confirm('Sign out of your account?')) {
-        signOut().catch(() => {});
-      }
-    } else {
-      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: () => signOut().catch(() => {}) },
-      ]);
-    }
-  };
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
+    <>
+    <AccountSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} />
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: PRIMARY,
@@ -90,7 +75,7 @@ export default function TabLayout() {
           headerTitle: 'My Rewards',
           headerRight: () => (
             <TouchableOpacity
-              onPress={handleAccountPress}
+              onPress={() => setSheetOpen(true)}
               style={{ marginRight: 16, padding: 4 }}
             >
               <Ionicons
@@ -103,5 +88,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
