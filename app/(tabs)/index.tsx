@@ -387,8 +387,8 @@ export default function ShopScreen() {
 
   const refresh = useCallback(() => setListItems(getList(sk)), [sk]);
 
-  // Reload grocery list when store key changes
-  useEffect(() => { setListItems(getList(sk)); }, [sk]);
+  // Reload grocery list when store key or session changes (clears on sign-out)
+  useEffect(() => { setListItems(getList(sk)); }, [sk, session]);
 
   // Fetch Supabase items when store changes
   useEffect(() => {

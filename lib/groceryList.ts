@@ -137,3 +137,10 @@ export function clearHistory(storeKey: string): void {
   all[storeKey] = (all[storeKey] ?? []).filter((i) => !i.checked);
   saveAll(all);
 }
+
+/** Clears all grocery lists (called on sign-out). */
+export function clearAllLists(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}

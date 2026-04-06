@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { getDeviceId } from './identity';
 import { fetchProfile } from './api';
 import { clearFavorites } from './stores';
+import { clearAllLists } from './groceryList';
 
 interface AuthContextValue {
   session: Session | null;
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (newSession?.user.id) loadAdminFlag(newSession.user.id);
       else {
         setIsAdmin(false);
-        if (event === 'SIGNED_OUT') clearFavorites();
+        if (event === 'SIGNED_OUT') { clearFavorites(); clearAllLists(); }
       }
     });
 
