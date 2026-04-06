@@ -16,6 +16,7 @@ const FEATURED_KEY = 'shelfcheck:featured_badge';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { fetchProfile, fetchLeaderboard, updateUsername, updateFeaturedBadge, confirmPendingPoints, type Profile, type LeaderboardEntry } from '../../lib/api';
+import TierProgressModal from '../../components/TierProgressModal';
 import { supabase } from '../../lib/supabase';
 import { useAuth, getReportingUserId } from '../../lib/auth';
 import {
@@ -219,6 +220,7 @@ export default function RewardsScreen() {
   const [lbLoading, setLbLoading]         = useState(true);
   const [lbError, setLbError]             = useState<string | null>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [showTierProgress, setShowTierProgress] = useState(false);
   const [previewBadge, setPreviewBadge]   = useState<Badge | null>(null);
   const [featuredBadgeId, setFeaturedBadgeId] = useState<string | null>(() => {
     try { return localStorage.getItem(FEATURED_KEY); } catch { return null; }
@@ -445,6 +447,15 @@ export default function RewardsScreen() {
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
             </View>
+            <TouchableOpacity
+              style={styles.tierProgressBtn}
+              onPress={() => setShowTierProgress(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="layers-outline" size={13} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.tierProgressBtnText}>View all levels &amp; perks</Text>
+              <Ionicons name="chevron-forward" size={12} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
           </View>
 
           {/* Stats row */}
@@ -642,6 +653,12 @@ export default function RewardsScreen() {
           onClose={() => setPreviewBadge(null)}
         />
       )}
+
+      <TierProgressModal
+        visible={showTierProgress}
+        onClose={() => setShowTierProgress(false)}
+        points={points}
+      />
     </SafeAreaView>
   );
 }
@@ -700,6 +717,12 @@ const styles = StyleSheet.create({
   progressLabel:      { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
   progressTrack:      { height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden' },
   progressFill:       { height: '100%', backgroundColor: '#fff', borderRadius: 4 },
+  tierProgressBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 5, marginTop: 2,
+  },
+  tierProgressBtnText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
 
   // Stats
   statsRow:           { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 12, paddingVertical: 12 },
