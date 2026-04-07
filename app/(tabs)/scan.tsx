@@ -161,7 +161,12 @@ export default function ScanScreen() {
         {store ? (
           <View style={styles.storeChip}>
             <Ionicons name="storefront-outline" size={14} color={PRIMARY} />
-            <Text style={styles.storeChipText} numberOfLines={1}>{store.name}</Text>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={styles.storeChipText} numberOfLines={1}>{store.name}</Text>
+              {store.address ? (
+                <Text style={styles.storeChipAddress} numberOfLines={1}>{store.address}</Text>
+              ) : null}
+            </View>
           </View>
         ) : (
           <View style={styles.storeWarning}>
@@ -382,8 +387,9 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 22, fontWeight: '800', color: '#111827' },
   heroSub:   { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20, maxWidth: 300 },
 
-  storeChip:        { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', backgroundColor: '#ECFDF5', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 14, borderWidth: 1, borderColor: '#A7F3D0' },
-  storeChipText:    { fontSize: 13, fontWeight: '600', color: '#065F46', maxWidth: 260 },
+  storeChip:        { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', backgroundColor: '#ECFDF5', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14, borderWidth: 1, borderColor: '#A7F3D0', maxWidth: '90%' },
+  storeChipText:    { fontSize: 13, fontWeight: '600', color: '#065F46' },
+  storeChipAddress: { fontSize: 11, color: '#059669', marginTop: 1 },
   storeWarning:     { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10, marginBottom: 14, borderWidth: 1, borderColor: '#FDE68A' },
   storeWarningText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },
 

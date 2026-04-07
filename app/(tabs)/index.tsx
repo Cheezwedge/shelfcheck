@@ -35,6 +35,7 @@ import {
   type GroceryListItem,
 } from '../../lib/groceryList';
 import StorePicker from '../../components/StorePicker';
+import AccountSheet from '../../components/AccountSheet';
 import { useAuth } from '../../lib/auth';
 
 const PRIMARY = '#1D9E75';
@@ -348,6 +349,7 @@ function AddSheet({
 export default function ShopScreen() {
   const router = useRouter();
   const { isGuest, session } = useAuth();
+  const [acctSheetOpen, setAcctSheetOpen] = useState(false);
 
   function handleToggleFav() {
     if (!selectedStore) return;
@@ -729,6 +731,7 @@ export default function ShopScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <AccountSheet visible={acctSheetOpen} onClose={() => setAcctSheetOpen(false)} />
       {/* Store header */}
       <View style={styles.header}>
         <TouchableOpacity style={{ flex: 1 }} onPress={() => setPickerVisible(true)} activeOpacity={0.75}>
@@ -758,6 +761,13 @@ export default function ShopScreen() {
               <Ionicons name="podium-outline" size={20} color={PRIMARY} />
             </TouchableOpacity>
           )}
+          <TouchableOpacity onPress={() => setAcctSheetOpen(true)} hitSlop={8} style={styles.lbBtn}>
+            <Ionicons
+              name={isGuest ? 'person-circle-outline' : 'person-circle'}
+              size={26}
+              color={isGuest ? '#9CA3AF' : PRIMARY}
+            />
+          </TouchableOpacity>
           {totalQty > 0 && (
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeText}>{totalQty}</Text>

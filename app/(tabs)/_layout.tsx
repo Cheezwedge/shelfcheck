@@ -65,6 +65,18 @@ export default function TabLayout() {
           title: 'Scan',
           tabBarIcon: ({ color, size }) => <Ionicons name="scan" size={size} color={color} />,
           headerTitle: 'Scan Receipt',
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => setSheetOpen(true)}
+              style={{ marginRight: 16, padding: 4 }}
+            >
+              <Ionicons
+                name={isGuest ? 'person-circle-outline' : 'person-circle'}
+                size={26}
+                color={isGuest ? INACTIVE : PRIMARY}
+              />
+            </TouchableOpacity>
+          ),
         }}
       />
       <Tabs.Screen
