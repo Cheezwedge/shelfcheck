@@ -67,7 +67,7 @@ export default function HomeScreen() {
   const renderItem = ({ item }: { item: LiveItem }) => (
     <TouchableOpacity
       style={styles.itemCard}
-      onPress={() => router.push(`/report/${item.id}`)}
+      onPress={() => router.push(`/item/${item.id}`)}
       activeOpacity={0.7}
     >
       <View style={styles.itemLeft}>

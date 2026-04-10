@@ -9,6 +9,16 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
+          name="item/[id]"
+          options={{
+            title: 'Item Detail',
+            headerStyle: { backgroundColor: '#fff' },
+            headerTintColor: '#1D9E75',
+            headerTitleStyle: { fontWeight: '700', color: '#111' },
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
           name="report/[id]"
           options={{
             title: 'Report Item',

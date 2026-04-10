@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { ItemRow, LiveItem } from './types';
+import type { ItemRow, LiveItem, RecentReport } from './types';
 import type { StockStatus } from '../data';
 
 /**
@@ -74,16 +74,54 @@ export async function fetchStoreName(): Promise<string> {
 export async function submitReport(
   itemId: string,
   status: Extract<StockStatus, 'in-stock' | 'out-of-stock'>,
-  userId: string
+  userId: string,
+  photoUrl?: string
 ): Promise<string> {
+  const payload: Record<string, unknown> = { item_id: itemId, status, user_id: userId };
+  if (photoUrl) payload.photo_url = photoUrl;
+
   const { data, error } = await supabase
     .from('reports')
-    .insert({ item_id: itemId, status, user_id: userId })
+    .insert(payload)
     .select('id')
     .single();
 
   if (error) throw error;
   return (data as { id: string }).id;
+}
+
+/**
+ * Upload a shelf photo to Supabase Storage and return its public URL.
+ * @param localUri  URI returned by expo-image-picker (file://, blob:, or data:)
+ */
+export async function uploadShelfPhoto(localUri: string): Promise<string> {
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+
+  const { error } = await supabase.storage
+    .from('shelf-photos')
+    .upload(filename, blob, { contentType: 'image/jpeg', upsert: false });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('shelf-photos').getPublicUrl(filename);
+  return data.publicUrl;
+}
+
+/**
+ * Fetch the most recent reports for an item, including any attached photo URLs.
+ */
+export async function fetchRecentReports(itemId: string): Promise<RecentReport[]> {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('id, status, photo_url, created_at')
+    .eq('item_id', itemId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error) throw error;
+  return (data ?? []) as RecentReport[];
 }
 
 export interface Profile {
