@@ -42,7 +42,8 @@ create index if not exists reports_item_created_idx on public.reports(item_id, c
 
 -- 4. VIEW: each item joined with its most recent report's status
 --    status is NULL when no reports exist yet (shown as "Uncertain" in the app)
-create or replace view public.items_with_status as
+drop view if exists public.items_with_status;
+create view public.items_with_status as
 select
   i.id,
   i.store_id,
