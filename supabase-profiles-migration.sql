@@ -6,10 +6,12 @@
 --   2. supabase-profiles-migration.sql   ← this file
 --   3. supabase-auth-migration.sql
 --   4. supabase-photos-migration.sql
+--
+-- Safe to re-run — all statements use IF NOT EXISTS / OR REPLACE guards.
 -- ================================================================
 
 -- 1. PROFILES — one row per anonymous device / future user account
-create table public.profiles (
+create table if not exists public.profiles (
   id             uuid primary key,
   points         int  not null default 0,
   reports_count  int  not null default 0,
@@ -19,9 +21,17 @@ create table public.profiles (
 
 alter table public.profiles enable row level security;
 
-create policy "profiles_select" on public.profiles for select using (true);
-create policy "profiles_insert" on public.profiles for insert with check (true);
-create policy "profiles_update" on public.profiles for update using (true);
+do $$ begin
+  create policy "profiles_select" on public.profiles for select using (true);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy "profiles_insert" on public.profiles for insert with check (true);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy "profiles_update" on public.profiles for update using (true);
+exception when duplicate_object then null; end $$;
 
 -- 2. TRIGGER — auto-increment points when a report is inserted with a user_id
 create or replace function public.handle_new_report()
@@ -39,6 +49,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
+drop trigger if exists on_report_inserted on public.reports;
 create trigger on_report_inserted
   after insert on public.reports
   for each row

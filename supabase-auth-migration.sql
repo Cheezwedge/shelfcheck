@@ -6,11 +6,14 @@
 --   2. supabase-profiles-migration.sql
 --   3. supabase-auth-migration.sql       ← this file
 --   4. supabase-photos-migration.sql
+--
+-- Safe to re-run — all statements use OR REPLACE / drop-then-recreate.
 -- ================================================================
 
 -- 1. Tighten profiles UPDATE policy — only the row owner can update directly.
 --    The trigger (security definer) still bypasses this for upserts.
-drop policy if exists "profiles_update" on public.profiles;
+drop policy if exists "profiles_update"      on public.profiles;
+drop policy if exists "profiles_update_own"  on public.profiles;
 
 create policy "profiles_update_own" on public.profiles
   for update using (
