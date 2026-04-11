@@ -1,7 +1,11 @@
 -- ================================================================
--- ShelfCheck — Photos Migration
--- Run this in your Supabase SQL Editor AFTER supabase-schema.sql
--- and the profiles/auth migrations.
+-- ShelfCheck — Photos Migration (Step 4 of 4)
+--
+-- Run order:
+--   1. supabase-schema.sql
+--   2. supabase-profiles-migration.sql
+--   3. supabase-auth-migration.sql
+--   4. supabase-photos-migration.sql  ← this file
 -- ================================================================
 
 -- 1. Add photo_url column to reports

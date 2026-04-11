@@ -1,6 +1,11 @@
 -- ================================================================
--- ShelfCheck — Supabase Schema
--- Paste this entire file into your Supabase SQL Editor and run it.
+-- ShelfCheck — Core Schema (Step 1 of 4)
+--
+-- Run order:
+--   1. supabase-schema.sql               ← this file
+--   2. supabase-profiles-migration.sql
+--   3. supabase-auth-migration.sql
+--   4. supabase-photos-migration.sql
 -- ================================================================
 
 -- 1. STORES

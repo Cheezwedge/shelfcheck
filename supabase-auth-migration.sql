@@ -1,6 +1,11 @@
 -- ================================================================
--- ShelfCheck — Auth Migration (Step 2)
--- Run in Supabase SQL Editor AFTER supabase-profiles-migration.sql
+-- ShelfCheck — Auth Migration (Step 3 of 4)
+--
+-- Run order:
+--   1. supabase-schema.sql
+--   2. supabase-profiles-migration.sql
+--   3. supabase-auth-migration.sql       ← this file
+--   4. supabase-photos-migration.sql
 -- ================================================================
 
 -- 1. Tighten profiles UPDATE policy — only the row owner can update directly.

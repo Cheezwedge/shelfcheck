@@ -1,6 +1,11 @@
 -- ================================================================
--- ShelfCheck — Profiles Migration
--- Paste into Supabase SQL Editor and run AFTER supabase-schema.sql
+-- ShelfCheck — Profiles Migration (Step 2 of 4)
+--
+-- Run order:
+--   1. supabase-schema.sql
+--   2. supabase-profiles-migration.sql   ← this file
+--   3. supabase-auth-migration.sql
+--   4. supabase-photos-migration.sql
 -- ================================================================
 
 -- 1. PROFILES — one row per anonymous device / future user account
