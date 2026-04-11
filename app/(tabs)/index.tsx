@@ -8,6 +8,7 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,8 +71,19 @@ export default function HomeScreen() {
       onPress={() => router.push(`/item/${item.id}`)}
       activeOpacity={0.7}
     >
+      {/* Photo thumbnail strip on the left when a photo exists */}
+      {item.photoUrl ? (
+        <Image source={{ uri: item.photoUrl }} style={styles.itemThumb} />
+      ) : null}
       <View style={styles.itemLeft}>
-        <Text style={styles.itemName}>{item.name}</Text>
+        <View style={styles.itemNameRow}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          {item.photoUrl ? (
+            <View style={styles.cameraBadge}>
+              <Ionicons name="camera" size={10} color={PRIMARY} />
+            </View>
+          ) : null}
+        </View>
         <View style={styles.itemMeta}>
           <Text style={styles.itemCategory}>{item.category}</Text>
           <Text style={styles.dot}>·</Text>
@@ -299,16 +311,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  itemThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
   },
   itemLeft: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 4,
+  },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
   },
   itemName: {
     fontSize: 15,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
+  },
+  cameraBadge: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
+    padding: 3,
   },
   itemMeta: {
     flexDirection: 'row',

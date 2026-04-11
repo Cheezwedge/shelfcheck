@@ -51,10 +51,11 @@ select
   i.category,
   i.created_at,
   r.status,
-  r.created_at as last_reported_at
+  r.created_at as last_reported_at,
+  r.photo_url
 from public.items i
 left join lateral (
-  select status, created_at
+  select status, created_at, photo_url
   from   public.reports
   where  item_id = i.id
   order  by created_at desc

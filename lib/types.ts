@@ -9,6 +9,7 @@ export interface ItemRow {
   created_at: string;
   status: StockStatus | null;       // null = no reports yet → shown as 'uncertain'
   last_reported_at: string | null;  // ISO timestamp of the most recent report
+  photo_url: string | null;         // photo from the most recent report, if any
 }
 
 /** UI-facing shape used by screens */
@@ -18,6 +19,7 @@ export interface LiveItem {
   category: string;
   status: StockStatus;              // guaranteed non-null (null → 'uncertain')
   lastReportedAt: string | null;    // ISO timestamp, null if never reported
+  photoUrl: string | null;          // photo from the most recent report, if any
 }
 
 /** A single report row returned by fetchRecentReports */
