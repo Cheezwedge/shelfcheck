@@ -91,11 +91,13 @@ export async function submitReport(
   status: Extract<StockStatus, 'in-stock' | 'out-of-stock'>,
   userId: string,
   quantity?: number | null,
-  storeId?: string | null
+  storeId?: string | null,
+  photoUrl?: string | null
 ): Promise<string> {
   const payload: Record<string, unknown> = { item_id: itemId, status, user_id: userId };
   if (quantity != null) payload.quantity = quantity;
   if (storeId) payload.store_id = storeId;
+  if (photoUrl) payload.photo_url = photoUrl;
 
   const { data, error } = await supabase
     .from('reports')

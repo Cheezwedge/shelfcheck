@@ -72,23 +72,21 @@ export default function ReportScreen() {
     setPhotoPreview(null);
   }
 
-  async function uploadPhoto(reportId: string, userId: string): Promise<void> {
-    if (!photoFile) return;
-    setPhotoUploading(true);
+  /** Upload photo to storage and return its public URL, or null on failure. */
+  async function uploadPhotoGetUrl(userId: string): Promise<string | null> {
+    if (!photoFile) return null;
     try {
       const ext = photoFile.name.split('.').pop() ?? 'jpg';
-      const path = `${userId}/${reportId}-${Date.now()}.${ext}`;
+      const path = `${userId}/${Date.now()}.${ext}`;
       const { error } = await supabase.storage
         .from(PHOTO_BUCKET)
         .upload(path, photoFile, { contentType: photoFile.type });
-      if (error) { console.warn('Photo upload failed:', error.message); return; }
-      // Save public URL back to the report row so it can be displayed later
+      if (error) { console.warn('Photo upload failed:', error.message); return null; }
       const { data: urlData } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-      await supabase.from('reports').update({ photo_url: urlData.publicUrl }).eq('id', reportId);
+      return urlData.publicUrl;
     } catch (e) {
       console.warn('Photo upload error:', e);
-    } finally {
-      setPhotoUploading(false);
+      return null;
     }
   }
 
@@ -156,8 +154,15 @@ export default function ReportScreen() {
     setSubmitError(null);
     const userId = getReportingUserId(session);
     try {
-      const reportId = await submitReport(item.id, selected, userId, quantityEstimate, currentStoreId);
-      if (photoFile) await uploadPhoto(reportId, userId);
+      // Upload photo first (if any) so the URL can be included in the report INSERT.
+      // This avoids needing UPDATE permission on the reports table.
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        setPhotoUploading(true);
+        photoUrl = await uploadPhotoGetUrl(userId);
+        setPhotoUploading(false);
+      }
+      await submitReport(item.id, selected, userId, quantityEstimate, currentStoreId, photoUrl);
       setSubmitted(true);
       setTimeout(() => router.back(), 1600);
     } catch (err: unknown) {
@@ -172,6 +177,7 @@ export default function ReportScreen() {
       }
     } finally {
       setSubmitting(false);
+      setPhotoUploading(false);
     }
   };
 
