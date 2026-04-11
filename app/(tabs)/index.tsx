@@ -578,10 +578,10 @@ export default function ShopScreen() {
 
   async function handleReportActive(row: ActiveRow) {
     const currentStoreId = selectedStore?.supabaseId ?? '';
-    // Fast path: item already linked to Supabase
+    // Fast path: item already linked to Supabase — go to item detail (with photos)
     if (row.live) {
       router.push({
-        pathname: '/report/[id]',
+        pathname: '/item/[id]',
         params: { id: row.live.id, storeId: currentStoreId, storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
       });
       return;
@@ -593,6 +593,7 @@ export default function ShopScreen() {
     try {
       const sid = await ensureStoreId();
       if (!sid) {
+        // Store not in our DB — go directly to report screen (no item detail to show)
         router.push({
           pathname: '/report/[id]',
           params: { id: 'new', name: row.list.name, category: row.list.category, storeId: '', storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
@@ -602,7 +603,7 @@ export default function ShopScreen() {
       const itemId = await upsertItem(sid, row.list.name, row.list.category);
       fetchItems(sid).then(setStoreItems).catch(() => {});
       router.push({
-        pathname: '/report/[id]',
+        pathname: '/item/[id]',
         params: { id: itemId, storeId: sid, storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' },
       });
     } catch (err: unknown) {

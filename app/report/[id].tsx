@@ -449,14 +449,6 @@ export default function ReportScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Points note */}
-        <View style={styles.pointsNote}>
-          <Ionicons name="star" size={13} color="#F59E0B" />
-          <Text style={styles.pointsNoteText}>
-            Earns <Text style={styles.pointsBold}>{POINTS_PER_REPORT} points</Text> toward your next reward
-          </Text>
-        </View>
-
         {/* Error banner */}
         {submitError && (
           <View style={styles.errorBanner}>
