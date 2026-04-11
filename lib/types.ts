@@ -28,3 +28,11 @@ export interface LiveItem {
   lastReportedAt: string | null;    // ISO timestamp, null if never reported at this location
   quantity: number | null;          // estimated qty from most recent in-stock report
 }
+
+/** A single report row returned by fetchRecentReports */
+export interface RecentReport {
+  id: string;
+  status: 'in-stock' | 'out-of-stock';
+  photo_url: string | null;
+  created_at: string;
+}

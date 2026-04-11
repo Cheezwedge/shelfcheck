@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { ItemRow, LiveItem } from './types';
+import type { ItemRow, LiveItem, RecentReport } from './types';
 import type { StockStatus } from '../data';
 import { matchChain, CHAINS } from './stores';
 
@@ -483,4 +483,23 @@ export async function mergeItems(keepId: string, dropId: string): Promise<void> 
     drop_id: dropId,
   });
   if (error) throw error;
+}
+
+/**
+ * Fetch the most recent reports for an item, including any attached photo URLs.
+ * Used by the item detail screen to display report history and photo gallery.
+ */
+export async function fetchRecentReports(itemId: string, storeId?: string | null): Promise<RecentReport[]> {
+  let query = supabase
+    .from('reports')
+    .select('id, status, photo_url, created_at')
+    .eq('item_id', itemId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (storeId) query = query.eq('store_id', storeId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as RecentReport[];
 }

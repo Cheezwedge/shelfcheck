@@ -691,7 +691,15 @@ export default function ShopScreen() {
         <View style={styles.storeRow}>
           <TouchableOpacity
             style={styles.storeRowMain}
-            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.live.id, storeId: selectedStore?.supabaseId ?? '', storeName: selectedStore?.name ?? '', storeAddress: selectedStore?.address ?? '' } })}
+            onPress={() => router.push({
+              pathname: '/item/[id]',
+              params: {
+                id: item.live.id,
+                storeId: selectedStore?.supabaseId ?? '',
+                storeName: selectedStore?.name ?? '',
+                storeAddress: selectedStore?.address ?? '',
+              },
+            })}
             activeOpacity={0.7}
           >
             <Text style={styles.rowName} numberOfLines={2}>{item.live.name}</Text>

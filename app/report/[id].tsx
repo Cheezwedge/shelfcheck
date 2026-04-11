@@ -81,7 +81,10 @@ export default function ReportScreen() {
       const { error } = await supabase.storage
         .from(PHOTO_BUCKET)
         .upload(path, photoFile, { contentType: photoFile.type });
-      if (error) console.warn('Photo upload failed:', error.message);
+      if (error) { console.warn('Photo upload failed:', error.message); return; }
+      // Save public URL back to the report row so it can be displayed later
+      const { data: urlData } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+      await supabase.from('reports').update({ photo_url: urlData.publicUrl }).eq('id', reportId);
     } catch (e) {
       console.warn('Photo upload error:', e);
     } finally {
