@@ -8,9 +8,12 @@
     "ios": "expo start --ios",
     "web": "expo start --web --port 8081",
     "db:migrate": "node scripts/migrate.js",
-    "db:list": "node scripts/migrate.js --list"
+    "db:list": "node scripts/migrate.js --list",
+    "social-agent": "node scripts/social-agent.js",
+    "social-agent:dry-run": "DRY_RUN=true node scripts/social-agent.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "~14.0.4",
     "@supabase/supabase-js": "^2.100.0",
