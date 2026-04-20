@@ -51,6 +51,9 @@ export default function ReportScreen() {
   const [usernameSaving, setUsernameSaving] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
+  const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
+  const ALLOWED_TYPES   = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+
   function pickPhoto() {
     if (Platform.OS !== 'web') return;
     const input = document.createElement('input');
@@ -59,6 +62,15 @@ export default function ReportScreen() {
     input.onchange = (e: any) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      if (file.size > MAX_PHOTO_BYTES) {
+        setSubmitError('Photo must be under 5 MB. Try a smaller image.');
+        return;
+      }
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        setSubmitError('Only JPEG, PNG, or WebP photos are supported.');
+        return;
+      }
+      setSubmitError(null);
       setPhotoFile(file);
       const reader = new FileReader();
       reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
@@ -72,22 +84,17 @@ export default function ReportScreen() {
     setPhotoPreview(null);
   }
 
-  /** Upload photo to storage and return its public URL, or null on failure. */
-  async function uploadPhotoGetUrl(userId: string): Promise<string | null> {
-    if (!photoFile) return null;
-    try {
-      const ext = photoFile.name.split('.').pop() ?? 'jpg';
-      const path = `${userId}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage
-        .from(PHOTO_BUCKET)
-        .upload(path, photoFile, { contentType: photoFile.type });
-      if (error) { console.warn('Photo upload failed:', error.message); return null; }
-      const { data: urlData } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-      return urlData.publicUrl;
-    } catch (e) {
-      console.warn('Photo upload error:', e);
-      return null;
-    }
+  /** Upload photo to storage and return its public URL. Throws on failure so the
+   *  caller can decide whether to abort the whole submission or continue without. */
+  async function uploadPhotoGetUrl(userId: string): Promise<string> {
+    const ext = photoFile!.name.split('.').pop() ?? 'jpg';
+    const path = `${userId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .upload(path, photoFile!, { contentType: photoFile!.type });
+    if (error) throw new Error(`Photo upload failed: ${error.message}`);
+    const { data: urlData } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+    return urlData.publicUrl;
   }
 
   useEffect(() => {
@@ -159,7 +166,14 @@ export default function ReportScreen() {
       let photoUrl: string | null = null;
       if (photoFile) {
         setPhotoUploading(true);
-        photoUrl = await uploadPhotoGetUrl(userId);
+        try {
+          photoUrl = await uploadPhotoGetUrl(userId);
+        } catch (uploadErr: any) {
+          setPhotoUploading(false);
+          setSubmitError(`${uploadErr.message} — submit without the photo?`);
+          setSubmitting(false);
+          return;
+        }
         setPhotoUploading(false);
       }
       await submitReport(item.id, selected, userId, quantityEstimate, currentStoreId, photoUrl);
@@ -205,7 +219,7 @@ export default function ReportScreen() {
               : 'This store isn\'t in our database yet.'}
             {'\n'}Reports can only be submitted for stores we track.
           </Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
             <Text style={styles.backBtnText}>Go Back</Text>
           </TouchableOpacity>
         </View>
