@@ -261,13 +261,17 @@ export default function RewardsScreen() {
     // Without this, on refresh session=null briefly and we'd fetch the guest profile.
     if (authLoading) return;
     load();
+
+    // Poll every 30s so pending points confirm visually without needing navigation
+    const interval = setInterval(load, 30_000);
+
     const channel = supabase
       .channel(`profile-live-${reportingId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${reportingId}` },
         (payload) => { if (payload.new) setProfile(payload.new as Profile); }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
   }, [load, reportingId, authLoading]);
 
   const points        = profile?.points        ?? 0;

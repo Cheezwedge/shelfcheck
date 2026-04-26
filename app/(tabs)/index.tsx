@@ -371,6 +371,7 @@ export default function ShopScreen() {
   });
   const [storeItems, setStoreItems] = useState<LiveItem[]>([]);
   const [storeItemsLoading, setStoreItemsLoading] = useState(false);
+  const [storeItemsError, setStoreItemsError] = useState(false);
   const [listItems, setListItems] = useState<GroceryListItem[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [addSheetVisible, setAddSheetVisible] = useState(false);
@@ -392,14 +393,17 @@ export default function ShopScreen() {
   // Reload grocery list when store key or session changes (clears on sign-out)
   useEffect(() => { setListItems(getList(sk)); }, [sk, session]);
 
-  // Fetch Supabase items when store changes
-  useEffect(() => {
+  const loadStoreItems = useCallback(() => {
     setStoreItemsLoading(true);
+    setStoreItemsError(false);
     fetchItems(sid)
-      .then(setStoreItems)
-      .catch(() => setStoreItems([]))
+      .then((items) => { setStoreItems(items); setStoreItemsError(false); })
+      .catch(() => setStoreItemsError(true))
       .finally(() => setStoreItemsLoading(false));
   }, [sid]);
+
+  // Fetch Supabase items when store changes
+  useEffect(() => { loadStoreItems(); }, [loadStoreItems]);
 
   // Realtime subscription
   useEffect(() => {
@@ -417,8 +421,8 @@ export default function ShopScreen() {
   useFocusEffect(useCallback(() => {
     if (!isMounted.current) { isMounted.current = true; return; }
     refresh();
-    fetchItems(sid).then(setStoreItems).catch(() => {});
-  }, [refresh, sid]));
+    loadStoreItems();
+  }, [refresh, loadStoreItems]));
 
   // Store leaderboard — load when modal opens or store changes
   useEffect(() => {
@@ -836,6 +840,16 @@ export default function ShopScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={PRIMARY} />
         </View>
+      ) : storeItemsError && storeItems.length === 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="cloud-offline-outline" size={44} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>Couldn't load items</Text>
+          <Text style={styles.emptySub}>Check your connection and try again.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadStoreItems}>
+            <Ionicons name="refresh-outline" size={15} color={PRIMARY} />
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : isEmpty && search.length > 0 ? (
         <View style={styles.centered}>
           <Ionicons name="search-outline" size={40} color="#D1D5DB" />
@@ -1085,6 +1099,8 @@ const styles = StyleSheet.create({
   emptySub:        { fontSize: 14, color: '#6B7280', textAlign: 'center', paddingHorizontal: 40, lineHeight: 20 },
   findBtn:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, backgroundColor: '#ECFDF5', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: '#A7F3D0' },
   findBtnText:     { fontSize: 13, fontWeight: '600', color: PRIMARY },
+  retryBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: '#ECFDF5', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1, borderColor: '#A7F3D0' },
+  retryBtnText:    { fontSize: 13, fontWeight: '600', color: PRIMARY },
 
   // Header right side
   headerRight:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 },
