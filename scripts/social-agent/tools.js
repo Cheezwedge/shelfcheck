@@ -1,12 +1,12 @@
 'use strict';
 
-const { getAppStats }            = require('./supabase-stats');
-const { getBestPostingTime }     = require('./scheduler');
-const { getRecentPosts, savePostRecord } = require('./state');
-const { postTweet }              = require('./twitter-client');
-const { publishFeedPost, getPostInsights } = require('./instagram-client');
-const { buildRunwayPrompt, buildVideoScriptTemplate } = require('./video-generator');
-const { BRAND, FEATURE_TIPS, CHAR_LIMITS } = require('./content-templates');
+const { getAppStats }                              = require('./supabase-stats');
+const { getBestPostingTime }                       = require('./scheduler');
+const { getRecentPosts, savePostRecord }           = require('./state');
+const { postTweet }                                = require('./twitter-client');
+const { publishFeedPost, publishReel, getPostInsights } = require('./instagram-client');
+const { createVideo, saveVideoForTikTok, buildRunwayPrompt, buildVideoScriptTemplate } = require('./video-generator');
+const { BRAND, FEATURE_TIPS, CHAR_LIMITS }         = require('./content-templates');
 
 // ─── Tool schemas (Anthropic SDK format) ─────────────────────────────────────
 
@@ -44,7 +44,7 @@ const TOOLS = [
   {
     name: 'generate_video_script',
     description:
-      'Returns a structured video script template for TikTok/Reels/Shorts (15, 30, or 60 seconds) with section timings, hook examples, B-roll suggestions, and on-screen text tips. You fill in the actual script content based on the chosen angle.',
+      'Returns a structured video script template (15, 30, or 60 seconds) with section timings, hook examples, B-roll suggestions, and on-screen text tips. You fill in the actual script content.',
     input_schema: {
       type: 'object',
       properties: {
@@ -54,27 +54,62 @@ const TOOLS = [
     },
   },
   {
-    name: 'generate_video_prompt',
+    name: 'create_video',
     description:
-      'Creates a Runway Gen-3 Alpha Turbo prompt string for generating a short-form video clip. Phase 1: returns prompt text for manual submission. Set RUNWAY_API_KEY for automatic generation.',
+      'Generates a short-form video using the Runway Gen-3 Alpha Turbo API. If RUNWAY_API_KEY is set, actually generates and downloads the video. Otherwise returns a ready-to-use prompt for manual submission. Returns video_url and local_path on success.',
     input_schema: {
       type: 'object',
       properties: {
-        script_summary: { type: 'string', description: 'Key visual scenes from the video script (2-3 sentences)' },
+        prompt_text: {
+          type: 'string',
+          description: 'Description of the video content and key visual scenes (2-4 sentences)',
+        },
         style: {
           type: 'string',
           enum: ['lifestyle_realistic', 'animated_bold', 'screen_recording_tutorial'],
-          description: 'Visual style for the video',
+          description: 'Visual style: lifestyle_realistic for grocery/people content, animated_bold for graphics, screen_recording_tutorial for app demos',
         },
-        duration_seconds: { type: 'number', description: 'Clip duration in seconds (default 8)' },
+        duration_seconds: {
+          type: 'number',
+          enum: [5, 10],
+          description: 'Video clip duration (5 or 10 seconds)',
+        },
       },
-      required: ['script_summary', 'style'],
+      required: ['prompt_text', 'style'],
+    },
+  },
+  {
+    name: 'publish_instagram_reel',
+    description:
+      'Posts a video as an Instagram Reel via the Graph API. Requires a publicly accessible video_url (use the video_url returned by create_video). Set dry_run: true to validate without posting.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        video_url: { type: 'string', description: 'Publicly accessible .mp4 video URL' },
+        caption: { type: 'string', description: 'Reel caption with hashtags (max 2200 chars)' },
+        dry_run: { type: 'boolean', description: 'If true, log but do not post' },
+      },
+      required: ['video_url', 'caption'],
+    },
+  },
+  {
+    name: 'save_video_for_tiktok',
+    description:
+      'Saves a generated video and its caption to scripts/social-agent/tiktok-drafts/ for manual TikTok upload. Call this after create_video when you want to post to TikTok.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        video_path: { type: 'string', description: 'Local file path returned by create_video' },
+        caption: { type: 'string', description: 'TikTok caption with hashtags' },
+        content_type: { type: 'string', description: 'Content angle used (e.g. app_launch, feature_tip)' },
+      },
+      required: ['video_path', 'caption', 'content_type'],
     },
   },
   {
     name: 'generate_image_prompt',
     description:
-      'Creates an image generation prompt for DALL-E 3 or Stable Diffusion XL for static social posts (Instagram feed, Twitter card). Returns a ready-to-use prompt string.',
+      'Creates an image generation prompt (DALL-E 3 or Stable Diffusion XL) for static social posts. Returns a ready-to-use prompt string.',
     input_schema: {
       type: 'object',
       properties: {
@@ -100,7 +135,7 @@ const TOOLS = [
   {
     name: 'publish_instagram',
     description:
-      'Posts to the ShelfCheck Instagram account via the Graph API. Requires a publicly accessible image_url. Set dry_run: true to validate without posting.',
+      'Posts an image to the ShelfCheck Instagram feed via the Graph API. For videos use publish_instagram_reel instead. Requires a publicly accessible image_url.',
     input_schema: {
       type: 'object',
       properties: {
@@ -114,18 +149,19 @@ const TOOLS = [
   {
     name: 'save_post_record',
     description:
-      'Saves a record of a published (or drafted) post to the agent state file for future deduplication and analytics tracking. Always call this after publishing.',
+      'Saves a record of a published (or drafted) post for future deduplication and analytics. Always call this after publishing or saving a draft.',
     input_schema: {
       type: 'object',
       properties: {
-        platform: { type: 'string', enum: ['twitter', 'instagram', 'tiktok'] },
+        platform: { type: 'string', enum: ['twitter', 'instagram', 'instagram_reel', 'tiktok'] },
         content_type: {
           type: 'string',
-          enum: ['user_milestone', 'community_stat', 'feature_tip', 'store_content', 'lifestyle', 'video_script'],
+          enum: ['user_milestone', 'community_stat', 'feature_tip', 'store_content', 'lifestyle', 'app_launch', 'problem_awareness', 'app_discovery', 'video_script'],
         },
         excerpt: { type: 'string', description: 'First 120 chars of the post content' },
         post_url: { type: 'string', description: 'URL to the published post (if available)' },
-        draft: { type: 'boolean', description: 'True if not actually published (outside posting window)' },
+        draft: { type: 'boolean', description: 'True if not actually published' },
+        video_path: { type: 'string', description: 'Local path to video file (if applicable)' },
       },
       required: ['platform', 'content_type', 'excerpt'],
     },
@@ -133,7 +169,7 @@ const TOOLS = [
   {
     name: 'get_engagement_metrics',
     description:
-      'Reads engagement data (likes, reach, impressions) for recent Instagram posts to inform future content decisions.',
+      'Reads engagement data (likes, reach, impressions) for a past Instagram post to inform future content decisions.',
     input_schema: {
       type: 'object',
       properties: {
@@ -160,12 +196,19 @@ async function dispatchTool(name, input) {
     case 'generate_video_script':
       return buildVideoScriptTemplate(input.duration_seconds);
 
-    case 'generate_video_prompt':
-      return buildRunwayPrompt(
-        input.script_summary,
+    case 'create_video':
+      return await createVideo(
+        input.prompt_text,
         input.style,
-        { duration: input.duration_seconds }
+        input.duration_seconds || 10,
+        { dry_run: input.dry_run }
       );
+
+    case 'publish_instagram_reel':
+      return await publishReel(input.video_url, input.caption, { dry_run: input.dry_run });
+
+    case 'save_video_for_tiktok':
+      return saveVideoForTikTok(input.video_path, input.caption, input.content_type);
 
     case 'generate_image_prompt': {
       const formatMap = {
@@ -179,7 +222,7 @@ async function dispatchTool(name, input) {
         sdxl_prompt: `${input.scene}, natural lighting, warm tones, grocery store, Los Angeles, community, green #1D9E75 accent, photorealistic, ${fmt}, no text`,
         negative_prompt: 'text, watermarks, logos, dark, blurry, stock photo feel, corporate',
         format: fmt,
-        manual_instructions: `Open ChatGPT or DALL-E, paste the dalle3_prompt, generate, download, and use as your post image.`,
+        manual_instructions: 'Open ChatGPT or DALL-E 3, paste the dalle3_prompt, generate, and use as your post image.',
       };
     }
 
@@ -196,6 +239,7 @@ async function dispatchTool(name, input) {
         excerpt: (input.excerpt || '').slice(0, 120),
         post_url: input.post_url || null,
         draft: input.draft || false,
+        video_path: input.video_path || null,
       });
 
     case 'get_engagement_metrics':

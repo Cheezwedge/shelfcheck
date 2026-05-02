@@ -11,6 +11,7 @@ const BRAND = {
     milestone: ['#CommunityWin', '#ShelfCheckLegend'],
     community: ['#LAShoppers', '#GroceryCommunity'],
     tiktok: ['#GroceryTok', '#LALife', '#ShopSmart'],
+    launch: ['#NewApp', '#LALife', '#GroceryHacks'],
   },
 };
 
@@ -29,6 +30,15 @@ const TWITTER_TEMPLATES = {
 
   lifestyle: (ctx) =>
     `Stop wasting grocery runs. ${ctx.hook}\n\nShelfCheck has community stock reports for 20 grocery chains across LA.\n\n${BRAND.url} #ShelfCheck #GroceryShopping`,
+
+  app_launch: () =>
+    `We built ShelfCheck because we were tired of driving to the store and finding empty shelves.\n\nNow LA shoppers can check community stock reports for 20 chains before they leave home. Free forever.\n\n${BRAND.url} #ShelfCheck #LAGrocery`,
+
+  problem_awareness: (ctx) =>
+    `${ctx.stat} That's why we built ShelfCheck — community-powered stock reports for every major grocery chain in LA.\n\nNo more empty shelf surprises.\n\n${BRAND.url} #ShelfCheck`,
+
+  app_discovery: (ctx) =>
+    `New to ShelfCheck? Here's what it does:\n\n${ctx.bullets}\n\nFree at ${BRAND.url} #ShelfCheck #LAGrocery`,
 };
 
 const INSTAGRAM_TEMPLATES = {
@@ -43,6 +53,15 @@ const INSTAGRAM_TEMPLATES = {
 
   lifestyle: (ctx) =>
     `${ctx.hook} 🛒\n\nWith ShelfCheck, you can check community stock reports for your nearest grocery store before you leave home. No more wasted trips. No more empty shelves surprises.\n\n20 chains covered. Free forever.\n\n🔗 Link in bio\n\n#ShelfCheck #LAGrocery #GroceryTok #LALife #ShopSmart #GroceryShopping #LAFoodie`,
+
+  app_launch: () =>
+    `ShelfCheck is here 🌿\n\nWe built it because every LA shopper knows the feeling: you drive to the store, and the one thing you needed is out of stock.\n\nShelfCheck is a community-powered app that lets shoppers report what's in stock (and what isn't) at 20 grocery chains across Los Angeles — in real time, completely free.\n\nCheck it before you leave home. Save the trip.\n\n🔗 Link in bio → shelfcheckapp.com\n\n#ShelfCheck #LAGrocery #NewApp #LALife #GroceryHacks #LAFoodie #ShopSmart #GroceryShopping #LAShoppers`,
+
+  problem_awareness: (ctx) =>
+    `${ctx.hook} 😤\n\n${ctx.body}\n\nShelfCheck is the free app that lets LA shoppers see what's actually on the shelves — before leaving home.\n\n20 grocery chains covered. Community-powered. Always free.\n\n🔗 Link in bio\n\n#ShelfCheck #LAGrocery #LALife #GroceryHacks #LAFoodie #ShopSmart #GroceryShopping`,
+
+  app_discovery: () =>
+    `Here's what ShelfCheck actually does 👇\n\n✅ Check stock at 20 LA grocery chains before you leave\n✅ Submit reports and earn points + badges\n✅ Build a grocery list per store\n✅ Save favorite stores with one tap\n✅ See how fresh each report is\n\nFree forever. No ads. Community-powered.\n\n🔗 Link in bio → shelfcheckapp.com\n\n#ShelfCheck #LAGrocery #GroceryHacks #LAFoodie #ShopSmart #LALife #GroceryShopping #NewApp`,
 };
 
 const TIKTOK_HOOKS = [
@@ -53,6 +72,16 @@ const TIKTOK_HOOKS = [
   'Stocking up for the week? Check this before you leave 🛒',
   'Tell me you\'re an LA shopper without telling me you\'re an LA shopper',
   'Things I wish I knew before moving to LA: the grocery store edition',
+  'This free app just saved my Saturday morning 🙌',
+  'Why does this not have more downloads yet??',
+  'Empty shelves at Trader Joe\'s again? There\'s an app for that.',
+];
+
+const PROBLEM_STATS = [
+  '1 in 5 grocery trips ends with at least one out-of-stock item.',
+  'The average American makes 1.5 unnecessary grocery trips per week.',
+  'LA has over 500 major grocery stores — and no way to know what\'s in stock.',
+  'Out-of-stock items cost US shoppers an estimated $145 billion per year.',
 ];
 
 const FEATURE_TIPS = [
@@ -99,6 +128,7 @@ module.exports = {
   TWITTER_TEMPLATES,
   INSTAGRAM_TEMPLATES,
   TIKTOK_HOOKS,
+  PROBLEM_STATS,
   FEATURE_TIPS,
   VIDEO_SCRIPT_STRUCTURE,
   CHAR_LIMITS,

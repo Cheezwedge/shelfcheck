@@ -19,6 +19,7 @@
  *   TWITTER_API_KEY, TWITTER_API_SECRET
  *   TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET
  *   INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_USER_ID
+ *   RUNWAY_API_KEY   (optional — enables automatic video generation)
  */
 
 'use strict';
@@ -27,7 +28,7 @@ const fs      = require('fs');
 const path    = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const { TOOLS, dispatchTool } = require('./social-agent/tools');
-const { BRAND, FEATURE_TIPS, TIKTOK_HOOKS } = require('./social-agent/content-templates');
+const { BRAND, FEATURE_TIPS, TIKTOK_HOOKS, PROBLEM_STATS } = require('./social-agent/content-templates');
 
 // ─── Load .env ────────────────────────────────────────────────────────────────
 const envPath = path.join(__dirname, '..', '.env');
@@ -60,34 +61,55 @@ ${FEATURE_TIPS.map((t, i) => `${i + 1}. ${t.tip}`).join('\n')}
 ## TikTok/Video Hooks
 ${TIKTOK_HOOKS.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 
+## Problem Stats (use in problem_awareness posts)
+${PROBLEM_STATS.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
 ## Decision Sequence (follow this exactly every run)
 1. Call get_app_stats → read leaderboard, report counts
 2. Call get_recent_posts → check last 10 posts to avoid repetition
 3. Call get_best_posting_time({ platform: "all" }) → check if now is optimal
-4. Choose ONE content angle (priority order):
-   a. user_milestone — someone hit a new tier or top leaderboard rank (highest engagement)
-   b. community_stat — weekly/total report count milestone
-   c. feature_tip — one specific feature explained clearly
-   d. store_content — trending chain or store coverage
-   e. lifestyle — relatable grocery shopping pain point + ShelfCheck solution
-5. Write the post copy directly in your reasoning (do NOT call a separate tool for this)
-6. Call publish_tweet with the finished Twitter copy
-7. Call publish_instagram with the finished Instagram caption + an image prompt you describe
-8. Optionally call generate_video_script + generate_video_prompt for a TikTok script
-9. Call save_post_record for each published post
-10. Summarize: what was posted, why that angle, and any engagement observations
+4. Determine app stage based on stats:
+   - PRE-LAUNCH (total_reports < 20 OR leaderboard is empty): use pre-launch angles below
+   - EARLY (total_reports 20–200): mix of pre-launch and community angles
+   - GROWING (total_reports > 200): use full angle list
+5. Choose ONE content angle:
+
+   PRE-LAUNCH / EARLY STAGE angles (use when total_reports < 200):
+   a. app_launch — introduce the app, the problem it solves, why LA needs it
+   b. problem_awareness — lead with a relatable grocery pain point, reveal ShelfCheck as the fix
+   c. app_discovery — walk through what the app does, feature by feature
+   d. feature_tip — highlight one specific feature that solves a real problem
+   e. lifestyle — relatable hook + "here's how ShelfCheck fixes that"
+
+   GROWING / ESTABLISHED angles (add these when total_reports > 200):
+   f. user_milestone — someone hit a new tier (skip if leaderboard is empty)
+   g. community_stat — weekly report count milestone (skip if count < 50)
+   h. store_content — trending chain or coverage announcement
+
+6. Write post copy for Twitter AND Instagram directly in your reasoning
+7. Decide whether to make a video (aim for at least 1 video per 3 runs):
+   - Call generate_video_script to get the structure template
+   - Write the script in your reasoning
+   - Call create_video with a visual description of the script
+   - If create_video returns a local_path, call save_video_for_tiktok with the TikTok caption
+   - If create_video returns a video_url, also call publish_instagram_reel
+8. Call publish_tweet with the Twitter copy
+9. Call publish_instagram with the Instagram image post copy
+10. Call save_post_record for each published post
+11. Summarize what was created and why
 
 ## Guardrails
-- Never publish more than 2 posts per platform per day (get_recent_posts will show if limit is hit)
-- If get_best_posting_time says should_post: false for all platforms, generate drafts (save with draft: true) but do NOT call publish_tweet or publish_instagram
+- Never publish more than 2 posts per platform per day
+- If get_best_posting_time says should_post: false for all platforms, save drafts (draft: true) but do NOT call any publish tool
 - Never mention specific prices or make stock availability guarantees
-- Never tag specific usernames — reference anonymously ("one of our top reporters", "a community Legend")
+- Never tag specific usernames — reference anonymously
 - Twitter: max 280 characters
 - Instagram: max 2200 characters, always end with 5-7 relevant hashtags
+- For app_launch content: focus on the problem (wasted trips, empty shelves) before the solution
 
 ## Image Notes
-When posting to Instagram, use a placeholder image URL for now unless you have a real hosted image.
-A good placeholder: https://placehold.co/1080x1080/1D9E75/FFFFFF?text=ShelfCheck
+When posting to Instagram without a generated image, use this branded placeholder:
+https://placehold.co/1080x1080/1D9E75/FFFFFF?text=ShelfCheck
 
 Run now and complete the full sequence.`;
 
