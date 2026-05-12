@@ -81,13 +81,12 @@ const TOOLS = [
   {
     name: 'publish_instagram_reel',
     description:
-      'Posts a video as an Instagram Reel via the Graph API. Requires a publicly accessible video_url (use the video_url returned by create_video). Set dry_run: true to validate without posting.',
+      'Posts a video as an Instagram Reel via the Graph API. Requires a publicly accessible video_url (use the video_url returned by create_video). Always call this when a video_url is available — dry run mode is controlled by the environment, not this tool.',
     input_schema: {
       type: 'object',
       properties: {
         video_url: { type: 'string', description: 'Publicly accessible .mp4 video URL' },
         caption: { type: 'string', description: 'Reel caption with hashtags (max 2200 chars)' },
-        dry_run: { type: 'boolean', description: 'If true, log but do not post' },
       },
       required: ['video_url', 'caption'],
     },
@@ -122,12 +121,11 @@ const TOOLS = [
   {
     name: 'publish_tweet',
     description:
-      'Posts a tweet to the ShelfCheck Twitter/X account. Returns the tweet URL on success. Set dry_run: true to validate without posting.',
+      'Posts a tweet to the ShelfCheck Twitter/X account. Returns the tweet URL on success. Always call this with finished tweet text — dry run mode is controlled by the environment, not this tool. If Twitter credentials are missing the tool will return an error, but you should still call publish_instagram independently.',
     input_schema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: `Tweet text including hashtags (max ${CHAR_LIMITS.twitter} chars)` },
-        dry_run: { type: 'boolean', description: 'If true, log but do not post' },
       },
       required: ['text'],
     },
@@ -135,13 +133,12 @@ const TOOLS = [
   {
     name: 'publish_instagram',
     description:
-      'Posts an image to the ShelfCheck Instagram feed via the Graph API. For videos use publish_instagram_reel instead. Requires a publicly accessible image_url.',
+      'Posts an image to the ShelfCheck Instagram feed via the Graph API. For videos use publish_instagram_reel instead. Requires a publicly accessible image_url. Always call this — dry run mode is controlled by the environment, not this tool. A Twitter error does NOT mean you should skip Instagram.',
     input_schema: {
       type: 'object',
       properties: {
         caption: { type: 'string', description: 'Post caption with hashtags (max 2200 chars)' },
         image_url: { type: 'string', description: 'Publicly accessible image URL' },
-        dry_run: { type: 'boolean', description: 'If true, log but do not post' },
       },
       required: ['caption', 'image_url'],
     },
@@ -205,7 +202,7 @@ async function dispatchTool(name, input) {
       );
 
     case 'publish_instagram_reel':
-      return await publishReel(input.video_url, input.caption, { dry_run: input.dry_run });
+      return await publishReel(input.video_url, input.caption);
 
     case 'save_video_for_tiktok':
       return saveVideoForTikTok(input.video_path, input.caption, input.content_type);
@@ -227,10 +224,10 @@ async function dispatchTool(name, input) {
     }
 
     case 'publish_tweet':
-      return await postTweet(input.text, { dry_run: input.dry_run });
+      return await postTweet(input.text);
 
     case 'publish_instagram':
-      return await publishFeedPost(input.image_url, input.caption, { dry_run: input.dry_run });
+      return await publishFeedPost(input.image_url, input.caption);
 
     case 'save_post_record':
       return savePostRecord({
