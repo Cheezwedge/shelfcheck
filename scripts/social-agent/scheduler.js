@@ -58,6 +58,7 @@ function minutesSinceLastPost(platform) {
 }
 
 function getBestPostingTime(platform) {
+  const force = process.argv.includes('--force') || process.env.FORCE_POST === 'true';
   const hour = getLAHour();
   const currentTimeLA = getLATimeString();
   const platforms = platform === 'all' ? ['twitter', 'instagram', 'tiktok'] : [platform];
@@ -69,10 +70,12 @@ function getBestPostingTime(platform) {
     const minsSinceLast = minutesSinceLastPost(p);
     const tooRecent = minsSinceLast < 240; // 4 hour minimum gap
 
-    let should_post = inWindow && !tooRecent;
+    let should_post = force ? true : (inWindow && !tooRecent);
     let reason = '';
 
-    if (!inWindow) {
+    if (force) {
+      reason = `Force mode enabled — bypassing time window check`;
+    } else if (!inWindow) {
       reason = `Current LA time (${currentTimeLA}) is outside optimal windows: ${windowsDescription(windows)}`;
     } else if (tooRecent) {
       reason = `Last ${p} post was only ${Math.round(minsSinceLast)} minutes ago (minimum gap: 240 min)`;
